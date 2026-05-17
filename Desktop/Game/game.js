@@ -578,8 +578,8 @@ function animate() {
   let mx=0, mz=0;
   if (keys['KeyW']||keys['ArrowUp'])    { mx+=fwd.x; mz+=fwd.z; }
   if (keys['KeyS']||keys['ArrowDown'])  { mx-=fwd.x; mz-=fwd.z; }
-  if (keys['KeyA']||keys['ArrowLeft'])  { mx+=rgt.x; mz+=rgt.z; }
-  if (keys['KeyD']||keys['ArrowRight']) { mx-=rgt.x; mz-=rgt.z; }
+  if (keys['KeyA']||keys['ArrowLeft'])  { mx-=rgt.x; mz-=rgt.z; }
+  if (keys['KeyD']||keys['ArrowRight']) { mx+=rgt.x; mz+=rgt.z; }
   const len = Math.sqrt(mx*mx+mz*mz);
   const moving = len > 0.01;
   if (moving) { mx/=len; mz/=len; charPos.x+=mx*SPEED*dt; charPos.z+=mz*SPEED*dt; charYaw=Math.atan2(mx,mz); }
