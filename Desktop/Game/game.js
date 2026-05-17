@@ -178,6 +178,7 @@ function buildWorld() {
   scene.clear();
   scene.add(new THREE.AmbientLight(0xffffff, 0.6));
   scene.add(sun);
+  scene.add(charGroup);
 
   // Clouds
   for (let i = 0; i < 20; i++)
