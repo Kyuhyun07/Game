@@ -1,176 +1,161 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-  <meta charset="UTF-8" />
-  <title>BlockWorld - Roblox Style</title>
+  <meta charset="UTF-8"/>
+  <title>점프맵 오비 - BlockWorld</title>
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { background: #000; overflow: hidden; font-family: 'Segoe UI', sans-serif; }
-    canvas { display: block; }
+    *{margin:0;padding:0;box-sizing:border-box;}
+    body{background:#000;overflow:hidden;font-family:'Segoe UI',sans-serif;}
+    canvas{display:block;}
 
     /* 크로스헤어 */
-    #crosshair {
-      position: fixed; top: 50%; left: 50%;
-      transform: translate(-50%, -50%);
-      width: 10px; height: 10px;
-      border: 2px solid rgba(255,255,255,0.8);
-      border-radius: 50%;
-      pointer-events: none;
+    #crosshair{
+      position:fixed;top:50%;left:50%;
+      transform:translate(-50%,-50%);
+      width:12px;height:12px;
+      border:2px solid rgba(255,255,255,0.9);
+      border-radius:50%;pointer-events:none;
     }
 
-    /* HUD */
-    #hud {
-      position: fixed; top: 0; left: 0; right: 0;
-      padding: 14px 20px;
-      display: flex; justify-content: space-between; align-items: center;
-      pointer-events: none;
+    /* 상단 HUD */
+    #hud-top{
+      position:fixed;top:0;left:0;right:0;
+      display:flex;justify-content:space-between;align-items:flex-start;
+      padding:14px 20px;pointer-events:none;
     }
-    #hud-left { color: white; text-shadow: 1px 1px 3px #000; }
-    #hud-left h2 { font-size: 1.4rem; color: #fff; }
-    #hud-left p  { font-size: 0.85rem; color: #ddd; }
-    #hud-right { color: white; text-align: right; text-shadow: 1px 1px 3px #000; }
-    #timer-label { font-size: 0.8rem; color: #aaa; }
-    #timer { font-size: 2rem; font-weight: bold; color: #ffe066; }
+    #checkpoint-info{
+      color:#fff;text-shadow:1px 1px 4px #000;
+    }
+    #checkpoint-info h3{font-size:1rem;color:#aaa;font-weight:normal;}
+    #checkpoint-info p{font-size:1.5rem;font-weight:bold;color:#ffe066;}
+    #timer-box{
+      color:#fff;text-align:right;text-shadow:1px 1px 4px #000;
+    }
+    #timer-box small{color:#aaa;font-size:0.8rem;}
+    #timer-box #timer{font-size:2rem;font-weight:bold;color:#ffe066;}
 
-    /* 체력바 */
-    #health-bar-wrap {
-      position: fixed; bottom: 30px; left: 50%;
-      transform: translateX(-50%);
-      display: flex; flex-direction: column; align-items: center; gap: 4px;
+    /* 진행 바 */
+    #progress-bar-wrap{
+      position:fixed;top:0;left:0;right:0;height:4px;
+      background:rgba(255,255,255,0.15);
     }
-    #health-label { color: white; font-size: 0.8rem; text-shadow: 1px 1px 2px #000; }
-    #health-bar {
-      width: 200px; height: 14px;
-      background: rgba(0,0,0,0.4);
-      border: 2px solid rgba(255,255,255,0.3);
-      border-radius: 7px; overflow: hidden;
-    }
-    #health-fill {
-      height: 100%; width: 100%;
-      background: linear-gradient(90deg, #e74c3c, #e67e22);
-      transition: width 0.3s;
-      border-radius: 7px;
+    #progress-bar{
+      height:100%;width:0%;
+      background:linear-gradient(90deg,#e74c3c,#f1c40f,#2ecc71);
+      transition:width 0.4s;
     }
 
-    /* 시작 화면 */
-    #start-screen {
-      position: fixed; inset: 0;
-      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
-      display: flex; flex-direction: column;
-      align-items: center; justify-content: center;
-      color: white; z-index: 200;
+    /* 알림 */
+    #notify{
+      position:fixed;top:50%;left:50%;
+      transform:translate(-50%,-50%);
+      color:#fff;font-size:2rem;font-weight:bold;
+      text-shadow:2px 2px 8px #000;
+      opacity:0;transition:opacity 0.4s;
+      pointer-events:none;text-align:center;
     }
-    #start-screen h1 {
-      font-size: 3.5rem; font-weight: 900;
-      background: linear-gradient(90deg, #e74c3c, #e67e22, #f1c40f);
-      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-      margin-bottom: 8px;
+
+    /* 조작 힌트 */
+    #hint{
+      position:fixed;bottom:18px;left:50%;
+      transform:translateX(-50%);
+      color:rgba(255,255,255,0.5);font-size:0.75rem;
+      text-align:center;pointer-events:none;
     }
-    #start-screen p { color: #aaa; margin-bottom: 40px; font-size: 1rem; }
-    .menu-btn {
-      padding: 14px 50px; font-size: 1.1rem; font-weight: bold;
-      border: none; border-radius: 50px; cursor: pointer;
-      margin: 6px; transition: transform 0.1s;
+
+    /* 시작화면 */
+    #start-screen{
+      position:fixed;inset:0;z-index:200;
+      background:linear-gradient(135deg,#0f0c29,#302b63,#24243e);
+      display:flex;flex-direction:column;
+      align-items:center;justify-content:center;color:#fff;
     }
-    .menu-btn:hover { transform: scale(1.05); }
-    #play-btn { background: linear-gradient(90deg, #e74c3c, #e67e22); color: white; }
-    .controls-hint {
-      margin-top: 30px; color: #555; font-size: 0.8rem; text-align: center; line-height: 2;
+    #start-screen h1{
+      font-size:3.5rem;font-weight:900;margin-bottom:6px;
+      background:linear-gradient(90deg,#f7971e,#ffd200);
+      -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+    }
+    #start-screen .sub{color:#888;margin-bottom:36px;font-size:1rem;}
+    .btn{
+      padding:13px 46px;font-size:1.1rem;font-weight:bold;
+      border:none;border-radius:50px;cursor:pointer;
+      margin:6px;transition:transform .12s,box-shadow .12s;
+      box-shadow:0 4px 20px rgba(0,0,0,0.4);
+    }
+    .btn:hover{transform:scale(1.06);}
+    .btn-primary{background:linear-gradient(90deg,#f7971e,#ffd200);color:#1a1a1a;}
+    .btn-red{background:linear-gradient(90deg,#e74c3c,#c0392b);color:#fff;}
+    .btn-green{background:linear-gradient(90deg,#27ae60,#2ecc71);color:#fff;}
+    .btn-blue{background:linear-gradient(90deg,#2980b9,#3498db);color:#fff;}
+    .controls{
+      margin-top:28px;color:#555;font-size:0.8rem;
+      line-height:2.2;text-align:center;
     }
 
     /* 일시정지 */
-    #pause-screen {
-      position: fixed; inset: 0;
-      background: rgba(0,0,0,0.7);
-      display: none; flex-direction: column;
-      align-items: center; justify-content: center;
-      color: white; z-index: 100;
-      backdrop-filter: blur(4px);
+    #pause-screen{
+      position:fixed;inset:0;z-index:150;
+      background:rgba(0,0,0,0.7);backdrop-filter:blur(6px);
+      display:none;flex-direction:column;
+      align-items:center;justify-content:center;color:#fff;
+      gap:12px;
     }
-    #pause-screen h2 { font-size: 2.5rem; margin-bottom: 20px; }
-    #resume-btn { background: linear-gradient(90deg, #27ae60, #2ecc71); color: white; }
+    #pause-screen h2{font-size:2.5rem;margin-bottom:10px;}
 
-    /* 스테이지 클리어 */
-    #clear-screen {
-      position: fixed; inset: 0;
-      background: rgba(0,0,0,0.8);
-      display: none; flex-direction: column;
-      align-items: center; justify-content: center;
-      color: white; z-index: 150;
+    /* 클리어 */
+    #clear-screen{
+      position:fixed;inset:0;z-index:160;
+      background:rgba(0,0,0,0.85);
+      display:none;flex-direction:column;
+      align-items:center;justify-content:center;color:#fff;
     }
-    #clear-screen h2 { font-size: 3rem; color: #f1c40f; margin-bottom: 10px; }
-    #clear-screen p  { color: #aaa; margin-bottom: 30px; }
-    #next-btn { background: linear-gradient(90deg, #3498db, #2980b9); color: white; }
-
-    /* 사망 */
-    #dead-screen {
-      position: fixed; inset: 0;
-      background: rgba(180,0,0,0.3);
-      display: none; flex-direction: column;
-      align-items: center; justify-content: center;
-      color: white; z-index: 150;
-    }
-    #dead-screen h2 { font-size: 3rem; color: #e74c3c; margin-bottom: 10px; }
-    #retry-btn { background: linear-gradient(90deg, #e74c3c, #c0392b); color: white; }
-
-    /* 스테이지 표시 */
-    #stage-display {
-      position: fixed; top: 50%; left: 50%;
-      transform: translate(-50%, -50%);
-      color: white; font-size: 2.5rem; font-weight: bold;
-      text-shadow: 2px 2px 8px #000;
-      opacity: 0; transition: opacity 0.5s;
-      pointer-events: none; z-index: 50;
+    #clear-screen h2{font-size:3.5rem;color:#ffd200;margin-bottom:8px;}
+    #clear-screen .stats{
+      color:#aaa;margin-bottom:30px;font-size:1rem;
+      text-align:center;line-height:2;
     }
   </style>
 </head>
 <body>
 
 <div id="start-screen">
-  <h1>🎮 BlockWorld</h1>
-  <p>로블록스 스타일 3D 장애물 코스 게임</p>
-  <button class="menu-btn" id="play-btn">▶  게임 시작</button>
-  <div class="controls-hint">
-    WASD 이동 &nbsp;|&nbsp; Space 점프 &nbsp;|&nbsp; 마우스 카메라 &nbsp;|&nbsp; ESC 일시정지
+  <h1>🏃 점프맵 오비</h1>
+  <div class="sub">로블록스 스타일 장애물 코스 게임</div>
+  <button class="btn btn-primary" id="play-btn">▶ 게임 시작</button>
+  <div class="controls">
+    WASD / 방향키 이동 &nbsp;|&nbsp; Space 점프 &nbsp;|&nbsp; 마우스 카메라 회전<br>
+    더블 스페이스 더블점프 &nbsp;|&nbsp; ESC 일시정지
   </div>
 </div>
 
 <div id="pause-screen">
   <h2>⏸ 일시정지</h2>
-  <button class="menu-btn" id="resume-btn">▶ 계속하기</button>
+  <button class="btn btn-green" id="resume-btn">▶ 계속하기</button>
+  <button class="btn btn-red" id="restart-btn">🔄 처음부터</button>
 </div>
 
 <div id="clear-screen">
-  <h2>🏆 스테이지 클리어!</h2>
-  <p id="clear-time"></p>
-  <button class="menu-btn" id="next-btn">다음 스테이지 →</button>
+  <h2>🏆 완주!</h2>
+  <div class="stats" id="clear-stats"></div>
+  <button class="btn btn-primary" id="replay-btn">🔄 다시 하기</button>
 </div>
 
-<div id="dead-screen">
-  <h2>💀 추락!</h2>
-  <p style="color:#aaa; margin-bottom:20px;">다시 시도하세요</p>
-  <button class="menu-btn" id="retry-btn">🔄 다시 시작</button>
-</div>
-
+<div id="progress-bar-wrap"><div id="progress-bar"></div></div>
 <div id="crosshair"></div>
 
-<div id="hud">
-  <div id="hud-left">
-    <h2 id="stage-name">스테이지 1</h2>
-    <p id="pos-info"></p>
+<div id="hud-top">
+  <div id="checkpoint-info">
+    <h3>체크포인트</h3>
+    <p id="cp-text">0 / 0</p>
   </div>
-  <div id="hud-right">
-    <div id="timer-label">⏱ 시간</div>
+  <div id="timer-box">
+    <small>⏱ 시간</small>
     <div id="timer">0.0s</div>
   </div>
 </div>
 
-<div id="health-bar-wrap">
-  <div id="health-label">❤️ 체력</div>
-  <div id="health-bar"><div id="health-fill"></div></div>
-</div>
-
-<div id="stage-display"></div>
+<div id="notify"></div>
+<div id="hint">WASD 이동 &nbsp;|&nbsp; Space 점프 &nbsp;|&nbsp; 더블Space 더블점프 &nbsp;|&nbsp; ESC 일시정지</div>
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
 <script src="game.js"></script>
