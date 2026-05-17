@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>BlockWorld - Roblox Style</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #000; overflow: hidden; font-family: 'Segoe UI', sans-serif; }
+    canvas { display: block; }
+
+    /* 크로스헤어 */
+    #crosshair {
+      position: fixed; top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      width: 10px; height: 10px;
+      border: 2px solid rgba(255,255,255,0.8);
+      border-radius: 50%;
+      pointer-events: none;
+    }
+
+    /* HUD */
+    #hud {
+      position: fixed; top: 0; left: 0; right: 0;
+      padding: 14px 20px;
+      display: flex; justify-content: space-between; align-items: center;
+      pointer-events: none;
+    }
+    #hud-left { color: white; text-shadow: 1px 1px 3px #000; }
+    #hud-left h2 { font-size: 1.4rem; color: #fff; }
+    #hud-left p  { font-size: 0.85rem; color: #ddd; }
+    #hud-right { color: white; text-align: right; text-shadow: 1px 1px 3px #000; }
+    #timer-label { font-size: 0.8rem; color: #aaa; }
+    #timer { font-size: 2rem; font-weight: bold; color: #ffe066; }
+
+    /* 체력바 */
+    #health-bar-wrap {
+      position: fixed; bottom: 30px; left: 50%;
+      transform: translateX(-50%);
+      display: flex; flex-direction: column; align-items: center; gap: 4px;
+    }
+    #health-label { color: white; font-size: 0.8rem; text-shadow: 1px 1px 2px #000; }
+    #health-bar {
+      width: 200px; height: 14px;
+      background: rgba(0,0,0,0.4);
+      border: 2px solid rgba(255,255,255,0.3);
+      border-radius: 7px; overflow: hidden;
+    }
+    #health-fill {
+      height: 100%; width: 100%;
+      background: linear-gradient(90deg, #e74c3c, #e67e22);
+      transition: width 0.3s;
+      border-radius: 7px;
+    }
+
+    /* 시작 화면 */
+    #start-screen {
+      position: fixed; inset: 0;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      color: white; z-index: 200;
+    }
+    #start-screen h1 {
+      font-size: 3.5rem; font-weight: 900;
+      background: linear-gradient(90deg, #e74c3c, #e67e22, #f1c40f);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      margin-bottom: 8px;
+    }
+    #start-screen p { color: #aaa; margin-bottom: 40px; font-size: 1rem; }
+    .menu-btn {
+      padding: 14px 50px; font-size: 1.1rem; font-weight: bold;
+      border: none; border-radius: 50px; cursor: pointer;
+      margin: 6px; transition: transform 0.1s;
+    }
+    .menu-btn:hover { transform: scale(1.05); }
+    #play-btn { background: linear-gradient(90deg, #e74c3c, #e67e22); color: white; }
+    .controls-hint {
+      margin-top: 30px; color: #555; font-size: 0.8rem; text-align: center; line-height: 2;
+    }
+
+    /* 일시정지 */
+    #pause-screen {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.7);
+      display: none; flex-direction: column;
+      align-items: center; justify-content: center;
+      color: white; z-index: 100;
+      backdrop-filter: blur(4px);
+    }
+    #pause-screen h2 { font-size: 2.5rem; margin-bottom: 20px; }
+    #resume-btn { background: linear-gradient(90deg, #27ae60, #2ecc71); color: white; }
+
+    /* 스테이지 클리어 */
+    #clear-screen {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.8);
+      display: none; flex-direction: column;
+      align-items: center; justify-content: center;
+      color: white; z-index: 150;
+    }
+    #clear-screen h2 { font-size: 3rem; color: #f1c40f; margin-bottom: 10px; }
+    #clear-screen p  { color: #aaa; margin-bottom: 30px; }
+    #next-btn { background: linear-gradient(90deg, #3498db, #2980b9); color: white; }
+
+    /* 사망 */
+    #dead-screen {
+      position: fixed; inset: 0;
+      background: rgba(180,0,0,0.3);
+      display: none; flex-direction: column;
+      align-items: center; justify-content: center;
+      color: white; z-index: 150;
+    }
+    #dead-screen h2 { font-size: 3rem; color: #e74c3c; margin-bottom: 10px; }
+    #retry-btn { background: linear-gradient(90deg, #e74c3c, #c0392b); color: white; }
+
+    /* 스테이지 표시 */
+    #stage-display {
+      position: fixed; top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      color: white; font-size: 2.5rem; font-weight: bold;
+      text-shadow: 2px 2px 8px #000;
+      opacity: 0; transition: opacity 0.5s;
+      pointer-events: none; z-index: 50;
+    }
+  </style>
+</head>
+<body>
+
+<div id="start-screen">
+  <h1>🎮 BlockWorld</h1>
+  <p>로블록스 스타일 3D 장애물 코스 게임</p>
+  <button class="menu-btn" id="play-btn">▶  게임 시작</button>
+  <div class="controls-hint">
+    WASD 이동 &nbsp;|&nbsp; Space 점프 &nbsp;|&nbsp; 마우스 카메라 &nbsp;|&nbsp; ESC 일시정지
+  </div>
+</div>
+
+<div id="pause-screen">
+  <h2>⏸ 일시정지</h2>
+  <button class="menu-btn" id="resume-btn">▶ 계속하기</button>
+</div>
+
+<div id="clear-screen">
+  <h2>🏆 스테이지 클리어!</h2>
+  <p id="clear-time"></p>
+  <button class="menu-btn" id="next-btn">다음 스테이지 →</button>
+</div>
+
+<div id="dead-screen">
+  <h2>💀 추락!</h2>
+  <p style="color:#aaa; margin-bottom:20px;">다시 시도하세요</p>
+  <button class="menu-btn" id="retry-btn">🔄 다시 시작</button>
+</div>
+
+<div id="crosshair"></div>
+
+<div id="hud">
+  <div id="hud-left">
+    <h2 id="stage-name">스테이지 1</h2>
+    <p id="pos-info"></p>
+  </div>
+  <div id="hud-right">
+    <div id="timer-label">⏱ 시간</div>
+    <div id="timer">0.0s</div>
+  </div>
+</div>
+
+<div id="health-bar-wrap">
+  <div id="health-label">❤️ 체력</div>
+  <div id="health-bar"><div id="health-fill"></div></div>
+</div>
+
+<div id="stage-display"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+<script src="game.js"></script>
+</body>
+</html>
