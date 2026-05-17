@@ -364,71 +364,61 @@ function buildWorld() {
   addGoal(0,1,-722);
 }
 
-// ── 마리오 캐릭터 ──────────────────────────────────────────
+// ── 로블록스 R6 캐릭터 ────────────────────────────────────
 const charGroup = new THREE.Group();
 scene.add(charGroup);
 
-// 색상
-const C_RED   = 0xdd2222;
-const C_BLUE  = 0x2244cc;
-const C_SKIN  = 0xffcc88;
-const C_BROWN = 0x8B4513;
+function pt(w,h,d,c){ const m=mkBox(w,h,d,c); m.castShadow=true; m.receiveShadow=true; return m; }
+
+// 로블록스 기본 색상
+const C_SKIN  = 0xffcc00;   // 노란 피부
+const C_SHIRT = 0x1565c0;   // 파란 셔츠
+const C_PANTS = 0x0d1b6e;   // 진파랑 바지
 const C_WHITE = 0xffffff;
 const C_BLACK = 0x111111;
-const C_DARK  = 0x331100;
 
-function pt(w,h,d,c){ const m=mkBox(w,h,d,c); m.castShadow=true; return m; }
+// 몸통 (Torso)
+const body = pt(1.2, 1.4, 0.7, C_SHIRT);
 
-// 몸 (파란 오버올)
-const body    = pt(1.1, 1.2, 0.65, C_BLUE);
-// 셔츠 (빨간색, 몸통 위)
-const shirt   = pt(1.12, 0.5, 0.66, C_RED);  shirt.position.set(0, 0.35, 0);
-// 머리
-const head    = pt(1.1, 1.0, 1.0, C_SKIN);
-// 모자 (빨간)
-const hatBrim = pt(1.35, 0.15, 1.25, C_RED); hatBrim.position.set(0, 0.5, 0.0);
-const hatTop  = pt(0.95, 0.55, 1.05, C_RED); hatTop.position.set(0, 0.8, -0.05);
-// 콧수염 (갈색)
-const mustL   = pt(0.28, 0.12, 0.06, C_BROWN); mustL.position.set(-0.2,-0.08,0.52);
-const mustR   = pt(0.28, 0.12, 0.06, C_BROWN); mustR.position.set( 0.2,-0.08,0.52);
-// 눈
-const lEye    = pt(0.18, 0.18, 0.06, C_WHITE); lEye.position.set(-0.22, 0.12, 0.52);
-const rEye    = pt(0.18, 0.18, 0.06, C_WHITE); rEye.position.set( 0.22, 0.12, 0.52);
-const lPupil  = pt(0.09, 0.12, 0.06, C_BLACK); lPupil.position.set(-0.22,0.10,0.53);
-const rPupil  = pt(0.09, 0.12, 0.06, C_BLACK); rPupil.position.set( 0.22,0.10,0.53);
-// 코
-const nose    = pt(0.18, 0.14, 0.12, C_SKIN);  nose.position.set(0,0,0.52);
+// 머리 (Head) - 로블록스 특유의 정사각형 큰 머리
+const head = pt(1.2, 1.2, 1.2, C_SKIN);
+// 얼굴: 흰 눈 + 검은 눈동자 + 웃음
+const lEyeW  = pt(0.28,0.22,0.05,C_WHITE);  lEyeW.position.set(-0.24, 0.10, 0.61);
+const rEyeW  = pt(0.28,0.22,0.05,C_WHITE);  rEyeW.position.set( 0.24, 0.10, 0.61);
+const lPupil = pt(0.12,0.15,0.05,C_BLACK);  lPupil.position.set(-0.24, 0.08, 0.62);
+const rPupil = pt(0.12,0.15,0.05,C_BLACK);  rPupil.position.set( 0.24, 0.08, 0.62);
+const smL    = pt(0.13,0.07,0.04,C_BLACK);  smL.position.set(-0.13,-0.19,0.62); smL.rotation.z= 0.5;
+const smM    = pt(0.15,0.07,0.04,C_BLACK);  smM.position.set(    0,-0.24,0.62);
+const smR    = pt(0.13,0.07,0.04,C_BLACK);  smR.position.set( 0.13,-0.19,0.62); smR.rotation.z=-0.5;
+[lEyeW,rEyeW,lPupil,rPupil,smL,smM,smR].forEach(p=>head.add(p));
 
-head.add(hatBrim); head.add(hatTop);
-head.add(lEye); head.add(rEye); head.add(lPupil); head.add(rPupil);
-head.add(mustL); head.add(mustR); head.add(nose);
-body.add(shirt);
+// 셔츠 위 장식 (넥 라인)
+const neck = pt(0.4, 0.2, 0.4, C_SKIN);
 
-// 팔 (빨간 셔츠 소매)
-const lArm = pt(0.4, 1.1, 0.45, C_RED);
-const rArm = pt(0.4, 1.1, 0.45, C_RED);
-// 손 (피부)
-const lHand = pt(0.42, 0.35, 0.42, C_SKIN); lHand.position.set(0,-0.55,0);
-const rHand = pt(0.42, 0.35, 0.42, C_SKIN); rHand.position.set(0,-0.55,0);
-lArm.add(lHand); rArm.add(rHand);
+// 팔 - 위쪽(소매)은 셔츠색, 아래(손)는 피부색
+const lArm = pt(0.55, 1.3, 0.55, C_SKIN);
+const rArm = pt(0.55, 1.3, 0.55, C_SKIN);
+const lSleeve = pt(0.56,0.65,0.56,C_SHIRT); lSleeve.position.set(0, 0.33,0);
+const rSleeve = pt(0.56,0.65,0.56,C_SHIRT); rSleeve.position.set(0, 0.33,0);
+lArm.add(lSleeve); rArm.add(rSleeve);
 
-// 다리 (파란 오버올)
-const lLeg = pt(0.48, 1.15, 0.52, C_BLUE);
-const rLeg = pt(0.48, 1.15, 0.52, C_BLUE);
-// 신발 (갈색)
-const lShoe = pt(0.52, 0.32, 0.65, C_BROWN); lShoe.position.set(0,-0.5,0.05);
-const rShoe = pt(0.52, 0.32, 0.65, C_BROWN); rShoe.position.set(0,-0.5,0.05);
+// 다리 - 바지색 + 검은 신발
+const lLeg = pt(0.55, 1.3, 0.55, C_PANTS);
+const rLeg = pt(0.55, 1.3, 0.55, C_PANTS);
+const lShoe = pt(0.56,0.3,0.58,C_BLACK); lShoe.position.set(0,-0.52,0);
+const rShoe = pt(0.56,0.3,0.58,C_BLACK); rShoe.position.set(0,-0.52,0);
 lLeg.add(lShoe); rLeg.add(rShoe);
 
-// 위치 조립
+// 위치 조립 (로블록스 R6 비율)
 body.position.set(0, 0, 0);
-head.position.set(0, 1.15, 0);
-lArm.position.set(-0.77, 0.05, 0);
-rArm.position.set( 0.77, 0.05, 0);
-lLeg.position.set(-0.3, -1.17, 0);
-rLeg.position.set( 0.3, -1.17, 0);
+neck.position.set(0, 0.80, 0);
+head.position.set(0, 1.05, 0);
+lArm.position.set(-0.875, 0.05, 0);
+rArm.position.set( 0.875, 0.05, 0);
+lLeg.position.set(-0.325, -1.35, 0);
+rLeg.position.set( 0.325, -1.35, 0);
 
-[body, head, lArm, rArm, lLeg, rLeg].forEach(p=>charGroup.add(p));
+[body, neck, head, lArm, rArm, lLeg, rLeg].forEach(p=>charGroup.add(p));
 
 // ── Physics ────────────────────────────────────────────────
 const charPos = new THREE.Vector3(0, 3, 0);
@@ -612,11 +602,12 @@ let animT=0;
 function animChar(moving,dt){
   animT += dt*(moving?8:0);
   const sw = moving ? Math.sin(animT)*0.6 : 0;
-  lArm.rotation.x= sw; rArm.rotation.x=-sw;
-  lLeg.rotation.x=-sw; rLeg.rotation.x= sw;
-  // 모자 살짝 흔들
-  hatTop.rotation.z = moving ? Math.sin(animT)*0.04 : 0;
-  head.position.y = 1.15+(moving?Math.abs(Math.sin(animT))*0.03:0);
+  lArm.rotation.x =  sw;
+  rArm.rotation.x = -sw;
+  lLeg.rotation.x = -sw;
+  rLeg.rotation.x =  sw;
+  head.position.y = 1.05+(moving?Math.abs(Math.sin(animT))*0.03:0);
+  neck.position.y = 0.80+(moving?Math.abs(Math.sin(animT))*0.03:0);
   if(!onGround){
     body.scale.y=1.1; lLeg.scale.y=rLeg.scale.y=0.92;
   } else {
