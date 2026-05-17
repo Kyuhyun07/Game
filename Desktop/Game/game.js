@@ -435,49 +435,39 @@ const charPos = new THREE.Vector3(0, 3, 0);
 let charVelY  = 0;
 let charYaw   = 0;
 let onGround  = false;
-let jumpsLeft = 4;          // ★ 4단 점프
+let jumpsLeft = 5;          // ★ 5단 점프
 const GRAVITY = -22;
 const JUMP_F  = 9.0;
 const SPEED   = 7.5;
 const CHAR_H  = 1.75;
-const MAX_JUMPS = 4;
+const MAX_JUMPS = 5;
 
-// ── Camera ─────────────────────────────────────────────────
-let camYaw   = 0;
-let camPitch = 0.3;
-let camDist  = 10;
-let pointerLocked = false;
-
-document.addEventListener('mousemove', e=>{
-  if(!pointerLocked) return;
-  camYaw   -= e.movementX*0.003;
-  camPitch += e.movementY*0.003;
-  camPitch = Math.max(-0.15, Math.min(1.1, camPitch));
-});
-document.addEventListener('wheel', e=>{
-  camDist = Math.max(4,Math.min(18,camDist+e.deltaY*0.01));
-});
-document.addEventListener('pointerlockchange',()=>{
-  pointerLocked = document.pointerLockElement===renderer.domElement;
-  if(!pointerLocked&&gameRunning) pauseScreen.style.display='flex';
-});
+// ── Camera (자동 추적 - 마우스 불필요) ────────────────────
+let camYaw   = 0;           // 카메라 yaw (캐릭터 뒤를 서서히 따라감)
+const CAM_PITCH = 0.38;     // 고정 내려보는 각도
+const CAM_DIST  = 11;       // 고정 거리
+const CAM_LERP  = 4.0;      // 추적 속도 (높을수록 빠르게 따라감)
 
 // ── Input ──────────────────────────────────────────────────
 const keys={};
+let paused = false;
+
 document.addEventListener('keydown',e=>{
   if(keys[e.code]) return;
   keys[e.code]=true;
   if(e.code==='Escape'&&gameRunning){
-    if(pointerLocked) document.exitPointerLock();
-    else renderer.domElement.requestPointerLock();
+    paused = !paused;
+    pauseScreen.style.display = paused ? 'flex' : 'none';
   }
-  if(e.code==='Space'&&gameRunning&&pointerLocked){
+  if(e.code==='Space'&&gameRunning&&!paused){
     if(jumpsLeft>0){
       charVelY = JUMP_F;
       jumpsLeft--;
-      if(jumpsLeft===2) showNotify('2단 점프!',0.6);
-      else if(jumpsLeft===1) showNotify('3단 점프! ✨',0.6);
-      else if(jumpsLeft===0) showNotify('4단 점프! 🌟',0.8);
+      const used = MAX_JUMPS - jumpsLeft;
+      if(used===2) showNotify('2단 점프!',0.6);
+      else if(used===3) showNotify('3단 점프! ✨',0.6);
+      else if(used===4) showNotify('4단 점프! 🌟',0.7);
+      else if(used===5) showNotify('5단 점프! 💫',0.9);
       onGround=false;
       updateJumpDots();
     }
@@ -487,7 +477,7 @@ document.addEventListener('keyup',e=>{keys[e.code]=false;});
 
 // ── 점프 도트 UI ───────────────────────────────────────────
 function updateJumpDots(){
-  for(let i=0;i<4;i++){
+  for(let i=0;i<5;i++){
     const d=document.getElementById(`jd${i}`);
     d.className='jump-dot'+(i<jumpsLeft?' active':'');
   }
@@ -638,21 +628,19 @@ function animChar(moving,dt){
 document.getElementById('play-btn').addEventListener('click',()=>{
   startScreen.style.display='none';
   startGame();
-  renderer.domElement.requestPointerLock();
 });
 document.getElementById('resume-btn').addEventListener('click',()=>{
+  paused=false;
   pauseScreen.style.display='none';
-  renderer.domElement.requestPointerLock();
 });
 document.getElementById('restart-btn').addEventListener('click',()=>{
+  paused=false;
   pauseScreen.style.display='none';
   startGame();
-  renderer.domElement.requestPointerLock();
 });
 document.getElementById('replay-btn').addEventListener('click',()=>{
   clearScreen.style.display='none';
   startGame();
-  renderer.domElement.requestPointerLock();
 });
 
 // ── 메인 루프 ─────────────────────────────────────────────
@@ -667,7 +655,7 @@ function animate(){
   // 코인 회전 (수집 안된 것)
   coins.forEach(c=>{ if(!c.collected) c.mesh.rotation.y+=dt*2; });
 
-  if(!gameRunning){ renderer.render(scene,camera); return; }
+  if(!gameRunning||paused){ renderer.render(scene,camera); return; }
 
   elapsed+=dt;
   timerEl.textContent=elapsed.toFixed(1)+'s';
@@ -689,7 +677,7 @@ function animate(){
     }
   }
 
-  // ─ 이동 ─
+  // ─ 이동 (카메라 기준 방향) ─
   const fwd=new THREE.Vector3(-Math.sin(camYaw),0,-Math.cos(camYaw));
   const rgt=new THREE.Vector3(-Math.sin(camYaw-Math.PI/2),0,-Math.cos(camYaw-Math.PI/2));
   let mx=0,mz=0;
@@ -699,7 +687,18 @@ function animate(){
   if(keys['KeyD']||keys['ArrowRight']) {mx+=rgt.x;mz+=rgt.z;}
   const len=Math.sqrt(mx*mx+mz*mz);
   const moving=len>0.01;
-  if(moving){mx/=len;mz/=len;charPos.x+=mx*SPEED*dt;charPos.z+=mz*SPEED*dt;charYaw=Math.atan2(mx,mz);}
+  if(moving){
+    mx/=len; mz/=len;
+    charPos.x+=mx*SPEED*dt; charPos.z+=mz*SPEED*dt;
+    charYaw=Math.atan2(mx,mz);
+    // 카메라가 캐릭터 이동 방향 뒤로 부드럽게 따라감
+    let targetYaw = charYaw + Math.PI;   // 캐릭터 뒤쪽
+    // 각도 차이를 -π ~ π 범위로 정규화
+    let diff = targetYaw - camYaw;
+    while(diff >  Math.PI) diff -= Math.PI*2;
+    while(diff < -Math.PI) diff += Math.PI*2;
+    camYaw += diff * Math.min(CAM_LERP * dt, 1.0);
+  }
 
   // ─ 중력 ─
   charVelY+=GRAVITY*dt;
@@ -732,7 +731,6 @@ function animate(){
       `🪙 코인: <b>${collectedCoins} / ${totalCoins}</b><br>`+
       `💀 사망: <b>${deaths}번</b>`;
     clearScreen.style.display='flex';
-    if(pointerLocked) document.exitPointerLock();
   }
 
   // ─ 캐릭터 적용 ─
@@ -740,10 +738,10 @@ function animate(){
   charGroup.rotation.y=charYaw;
   animChar(moving,dt);
 
-  // ─ 3인칭 카메라 ─
-  const camOX=Math.sin(camYaw)*Math.cos(camPitch)*camDist;
-  const camOY=Math.sin(camPitch)*camDist+2.5;
-  const camOZ=Math.cos(camYaw)*Math.cos(camPitch)*camDist;
+  // ─ 3인칭 카메라 (자동 추적) ─
+  const camOX=Math.sin(camYaw)*Math.cos(CAM_PITCH)*CAM_DIST;
+  const camOY=Math.sin(CAM_PITCH)*CAM_DIST+2.5;
+  const camOZ=Math.cos(camYaw)*Math.cos(CAM_PITCH)*CAM_DIST;
   const target=charPos.clone().add(new THREE.Vector3(0,1.5,0));
   camera.position.copy(target).add(new THREE.Vector3(camOX,camOY,camOZ));
   camera.lookAt(target);
