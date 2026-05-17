@@ -308,30 +308,72 @@ function buildWorld() {
   addGoal(0, 1, -785);
 }
 
-// ── Character ──────────────────────────────────────────────
+// ── Character (로블록스 R6 스타일) ─────────────────────────
+// 색상
+const C_SKIN  = 0xffcc00;   // 노란 피부
+const C_SHIRT = 0x1565c0;   // 파란 셔츠
+const C_PANTS = 0x0d1b6e;   // 진파랑 바지
+const C_WHITE = 0xffffff;
+const C_BLACK = 0x111111;
+
 const charGroup = new THREE.Group();
 scene.add(charGroup);
 
-function mkPart(w,h,d,color){ const m=mkBox(w,h,d,color); m.castShadow=true; return m; }
-const torso = mkPart(1.0,1.3,0.6,0x3498db);
-const head  = mkPart(0.88,0.88,0.88,0xf5cba7);
-const lArm  = mkPart(0.38,1.1,0.38,0x3498db);
-const rArm  = mkPart(0.38,1.1,0.38,0x3498db);
-const lLeg  = mkPart(0.42,1.1,0.42,0x2c3e50);
-const rLeg  = mkPart(0.42,1.1,0.42,0x2c3e50);
-// face
-const lEye=mkBox(0.13,0.13,0.05,0x1a1a1a); lEye.position.set(-0.18,0.08,0.44);
-const rEye=mkBox(0.13,0.13,0.05,0x1a1a1a); rEye.position.set( 0.18,0.08,0.44);
-const mouth=mkBox(0.28,0.07,0.05,0x1a1a1a); mouth.position.set(0,-0.18,0.44);
-head.add(lEye); head.add(rEye); head.add(mouth);
+function mkPart(w,h,d,color){
+  const m = mkBox(w,h,d,color);
+  m.castShadow = true; m.receiveShadow = true;
+  return m;
+}
 
-torso.position.set(0,0,0);
-head.position.set(0,1.12,0);
-lArm.position.set(-0.73,0,0);
-rArm.position.set( 0.73,0,0);
-lLeg.position.set(-0.27,-1.22,0);
-rLeg.position.set( 0.27,-1.22,0);
-[torso,head,lArm,rArm,lLeg,rLeg].forEach(p=>charGroup.add(p));
+// ─ 몸통 (Torso): 1.2 x 1.4 x 0.7
+const torso = mkPart(1.2, 1.4, 0.7, C_SHIRT);
+
+// ─ 머리 (Head): 1.2 x 1.2 x 1.2  (정사각형, 로블록스 특징)
+const head = mkPart(1.2, 1.2, 1.2, C_SKIN);
+
+// 얼굴 — 흰 눈 + 검은 눈동자 + 웃음
+const lEyeW = mkBox(0.28, 0.22, 0.05, C_WHITE); lEyeW.position.set(-0.24, 0.1,  0.61);
+const rEyeW = mkBox(0.28, 0.22, 0.05, C_WHITE); rEyeW.position.set( 0.24, 0.1,  0.61);
+const lPupil = mkBox(0.12, 0.15, 0.05, C_BLACK); lPupil.position.set(-0.24, 0.08, 0.62);
+const rPupil = mkBox(0.12, 0.15, 0.05, C_BLACK); rPupil.position.set( 0.24, 0.08, 0.62);
+// 웃음 (3개 작은 박스로 곡선처럼)
+const smL = mkBox(0.14, 0.07, 0.04, C_BLACK); smL.position.set(-0.14,-0.20, 0.62); smL.rotation.z =  0.5;
+const smM = mkBox(0.16, 0.07, 0.04, C_BLACK); smM.position.set(    0,-0.25, 0.62);
+const smR = mkBox(0.14, 0.07, 0.04, C_BLACK); smR.position.set( 0.14,-0.20, 0.62); smR.rotation.z = -0.5;
+[lEyeW, rEyeW, lPupil, rPupil, smL, smM, smR].forEach(p => head.add(p));
+
+// ─ 팔 (Arm): 0.55 x 1.3 x 0.55  — 피부색 (로블록스 기본)
+const lArm = mkPart(0.55, 1.3, 0.55, C_SKIN);
+const rArm = mkPart(0.55, 1.3, 0.55, C_SKIN);
+// 셔츠 소매 (위쪽 절반)
+const lSleeve = mkPart(0.56, 0.65, 0.56, C_SHIRT); lSleeve.position.set(0,  0.33, 0);
+const rSleeve = mkPart(0.56, 0.65, 0.56, C_SHIRT); rSleeve.position.set(0,  0.33, 0);
+lArm.add(lSleeve); rArm.add(rSleeve);
+
+// ─ 다리 (Leg): 0.55 x 1.3 x 0.55 — 바지색
+const lLeg = mkPart(0.55, 1.3, 0.55, C_PANTS);
+const rLeg = mkPart(0.55, 1.3, 0.55, C_PANTS);
+// 신발 (아랫부분)
+const lShoe = mkPart(0.56, 0.3, 0.58, C_BLACK); lShoe.position.set(0, -0.52, 0);
+const rShoe = mkPart(0.56, 0.3, 0.58, C_BLACK); rShoe.position.set(0, -0.52, 0);
+lLeg.add(lShoe); rLeg.add(rShoe);
+
+// ─ 목
+const neck = mkPart(0.4, 0.2, 0.4, C_SKIN);
+
+// ─ 위치 배치 (로블록스 R6 비율)
+//   torso 중심 = (0, 0, 0)
+//   head  중심 = torso 위 + 반높이 + 목 + 반머리
+neck.position.set(0,  0.8,  0);          // 몸통 위
+head.position.set(0,  1.05, 0);          // 목 위
+
+lArm.position.set(-0.875, 0.05, 0);      // 왼쪽 어깨
+rArm.position.set( 0.875, 0.05, 0);      // 오른쪽 어깨
+
+lLeg.position.set(-0.325, -1.35, 0);     // 왼쪽 다리
+rLeg.position.set( 0.325, -1.35, 0);     // 오른쪽 다리
+
+[torso, neck, head, lArm, rArm, lLeg, rLeg].forEach(p => charGroup.add(p));
 
 // ── Physics ────────────────────────────────────────────────
 const charPos = new THREE.Vector3(0, 3, 0);
@@ -486,15 +528,24 @@ function reachCheckpoint(idx) {
 // ── Animation ─────────────────────────────────────────────
 let animT = 0;
 function animChar(moving, dt) {
-  animT += dt * (moving ? 9 : 0);
-  const sw = moving ? Math.sin(animT)*0.55 : 0;
-  lArm.rotation.x =  sw; rArm.rotation.x = -sw;
-  lLeg.rotation.x = -sw; rLeg.rotation.x =  sw;
-  head.position.y = 1.12 + (moving ? Math.abs(Math.sin(animT))*0.04 : 0);
+  animT += dt * (moving ? 8 : 0);
+  const sw = moving ? Math.sin(animT) * 0.6 : 0;
+  // 팔 앞뒤 스윙
+  lArm.rotation.x =  sw;
+  rArm.rotation.x = -sw;
+  // 다리 앞뒤 스윙
+  lLeg.rotation.x = -sw;
+  rLeg.rotation.x =  sw;
+  // 머리 살짝 위아래 (걸을 때)
+  head.position.y = 1.05 + (moving ? Math.abs(Math.sin(animT)) * 0.03 : 0);
+  neck.position.y = 0.80 + (moving ? Math.abs(Math.sin(animT)) * 0.03 : 0);
+  // 점프 시 몸 늘어남
   if (!onGround) {
-    torso.scale.y = 1.08; lLeg.scale.y = rLeg.scale.y = 0.93;
+    torso.scale.y = 1.1;
+    lLeg.scale.y  = rLeg.scale.y = 0.92;
   } else {
-    torso.scale.y = 1.0;  lLeg.scale.y = rLeg.scale.y = 1.0;
+    torso.scale.y = 1.0;
+    lLeg.scale.y  = rLeg.scale.y = 1.0;
   }
 }
 
