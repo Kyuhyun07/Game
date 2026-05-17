@@ -2,160 +2,165 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8"/>
-  <title>점프맵 오비 - BlockWorld</title>
+  <title>슈퍼 점프맵 - Mario Style</title>
   <style>
     *{margin:0;padding:0;box-sizing:border-box;}
     body{background:#000;overflow:hidden;font-family:'Segoe UI',sans-serif;}
     canvas{display:block;}
 
-    /* 크로스헤어 */
-    #crosshair{
-      position:fixed;top:50%;left:50%;
-      transform:translate(-50%,-50%);
-      width:12px;height:12px;
-      border:2px solid rgba(255,255,255,0.9);
-      border-radius:50%;pointer-events:none;
-    }
-
-    /* 상단 HUD */
-    #hud-top{
+    /* 코인 HUD */
+    #hud{
       position:fixed;top:0;left:0;right:0;
+      padding:12px 20px;
       display:flex;justify-content:space-between;align-items:flex-start;
-      padding:14px 20px;pointer-events:none;
+      pointer-events:none;
     }
-    #checkpoint-info{
-      color:#fff;text-shadow:1px 1px 4px #000;
+    #coin-box{
+      background:rgba(0,0,0,0.45);border-radius:12px;
+      padding:8px 16px;color:#fff;
+      display:flex;align-items:center;gap:8px;
     }
-    #checkpoint-info h3{font-size:1rem;color:#aaa;font-weight:normal;}
-    #checkpoint-info p{font-size:1.5rem;font-weight:bold;color:#ffe066;}
+    #coin-box span{font-size:1.4rem;}
+    #coin-count{font-size:1.3rem;font-weight:bold;color:#ffd700;}
     #timer-box{
-      color:#fff;text-align:right;text-shadow:1px 1px 4px #000;
+      background:rgba(0,0,0,0.45);border-radius:12px;
+      padding:8px 16px;color:#fff;text-align:right;
     }
-    #timer-box small{color:#aaa;font-size:0.8rem;}
-    #timer-box #timer{font-size:2rem;font-weight:bold;color:#ffe066;}
+    #timer-box small{color:#aaa;font-size:0.75rem;}
+    #timer{font-size:1.4rem;font-weight:bold;color:#ffd700;}
 
     /* 진행 바 */
-    #progress-bar-wrap{
-      position:fixed;top:0;left:0;right:0;height:4px;
-      background:rgba(255,255,255,0.15);
+    #prog-wrap{
+      position:fixed;top:0;left:0;right:0;height:5px;
+      background:rgba(255,255,255,0.1);
     }
-    #progress-bar{
+    #prog-bar{
       height:100%;width:0%;
-      background:linear-gradient(90deg,#e74c3c,#f1c40f,#2ecc71);
+      background:linear-gradient(90deg,#e74c3c,#f39c12,#2ecc71);
       transition:width 0.4s;
     }
+
+    /* 점프 잔여 표시 */
+    #jumps-left{
+      position:fixed;bottom:22px;left:50%;
+      transform:translateX(-50%);
+      display:flex;gap:6px;pointer-events:none;
+    }
+    .jump-dot{
+      width:14px;height:14px;border-radius:50%;
+      background:#fff;opacity:0.3;
+      transition:opacity 0.15s,background 0.15s;
+      box-shadow:0 0 6px rgba(255,255,255,0.4);
+    }
+    .jump-dot.active{opacity:1;background:#ffd700;}
 
     /* 알림 */
     #notify{
       position:fixed;top:50%;left:50%;
       transform:translate(-50%,-50%);
-      color:#fff;font-size:2rem;font-weight:bold;
-      text-shadow:2px 2px 8px #000;
-      opacity:0;transition:opacity 0.4s;
+      color:#fff;font-size:2.2rem;font-weight:900;
+      text-shadow:3px 3px 0 #000;
+      opacity:0;transition:opacity 0.35s;
       pointer-events:none;text-align:center;
-    }
-
-    /* 조작 힌트 */
-    #hint{
-      position:fixed;bottom:18px;left:50%;
-      transform:translateX(-50%);
-      color:rgba(255,255,255,0.5);font-size:0.75rem;
-      text-align:center;pointer-events:none;
+      z-index:50;
     }
 
     /* 시작화면 */
     #start-screen{
       position:fixed;inset:0;z-index:200;
-      background:linear-gradient(135deg,#0f0c29,#302b63,#24243e);
+      background:linear-gradient(180deg,#5c94fc 0%,#5c94fc 60%,#57a043 60%,#57a043 100%);
       display:flex;flex-direction:column;
       align-items:center;justify-content:center;color:#fff;
     }
     #start-screen h1{
-      font-size:3.5rem;font-weight:900;margin-bottom:6px;
-      background:linear-gradient(90deg,#f7971e,#ffd200);
-      -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+      font-size:3.8rem;font-weight:900;
+      color:#ffd700;
+      text-shadow:4px 4px 0 #c0392b, 6px 6px 0 rgba(0,0,0,0.3);
+      margin-bottom:6px;letter-spacing:2px;
     }
-    #start-screen .sub{color:#888;margin-bottom:36px;font-size:1rem;}
+    #start-screen .sub{
+      color:#fff;margin-bottom:36px;font-size:1rem;
+      text-shadow:1px 1px 0 #000;
+    }
     .btn{
-      padding:13px 46px;font-size:1.1rem;font-weight:bold;
+      padding:14px 50px;font-size:1.15rem;font-weight:bold;
       border:none;border-radius:50px;cursor:pointer;
-      margin:6px;transition:transform .12s,box-shadow .12s;
-      box-shadow:0 4px 20px rgba(0,0,0,0.4);
+      margin:6px;transition:transform .1s;
+      box-shadow:0 4px 0 rgba(0,0,0,0.3);
     }
-    .btn:hover{transform:scale(1.06);}
-    .btn-primary{background:linear-gradient(90deg,#f7971e,#ffd200);color:#1a1a1a;}
-    .btn-red{background:linear-gradient(90deg,#e74c3c,#c0392b);color:#fff;}
-    .btn-green{background:linear-gradient(90deg,#27ae60,#2ecc71);color:#fff;}
-    .btn-blue{background:linear-gradient(90deg,#2980b9,#3498db);color:#fff;}
+    .btn:hover{transform:translateY(-2px);}
+    .btn:active{transform:translateY(2px);box-shadow:none;}
+    .btn-red{background:#e74c3c;color:#fff;}
+    .btn-green{background:#27ae60;color:#fff;}
+    .btn-yellow{background:#f39c12;color:#fff;}
     .controls{
-      margin-top:28px;color:#555;font-size:0.8rem;
-      line-height:2.2;text-align:center;
+      margin-top:24px;color:rgba(255,255,255,0.7);
+      font-size:0.8rem;line-height:2.2;text-align:center;
+      text-shadow:1px 1px 0 #000;
     }
 
     /* 일시정지 */
     #pause-screen{
       position:fixed;inset:0;z-index:150;
-      background:rgba(0,0,0,0.7);backdrop-filter:blur(6px);
+      background:rgba(0,0,0,0.65);backdrop-filter:blur(5px);
       display:none;flex-direction:column;
-      align-items:center;justify-content:center;color:#fff;
-      gap:12px;
+      align-items:center;justify-content:center;color:#fff;gap:12px;
     }
-    #pause-screen h2{font-size:2.5rem;margin-bottom:10px;}
+    #pause-screen h2{font-size:2.5rem;color:#ffd700;text-shadow:2px 2px 0 #000;}
 
     /* 클리어 */
     #clear-screen{
       position:fixed;inset:0;z-index:160;
-      background:rgba(0,0,0,0.85);
+      background:rgba(0,0,0,0.8);
       display:none;flex-direction:column;
       align-items:center;justify-content:center;color:#fff;
     }
-    #clear-screen h2{font-size:3.5rem;color:#ffd200;margin-bottom:8px;}
-    #clear-screen .stats{
-      color:#aaa;margin-bottom:30px;font-size:1rem;
-      text-align:center;line-height:2;
+    #clear-screen h2{
+      font-size:3.5rem;color:#ffd700;
+      text-shadow:3px 3px 0 #c0392b;margin-bottom:10px;
     }
+    #clear-stats{color:#ddd;margin-bottom:30px;text-align:center;line-height:2.2;font-size:1.05rem;}
   </style>
 </head>
 <body>
 
 <div id="start-screen">
-  <h1>🏃 점프맵 오비</h1>
-  <div class="sub">로블록스 스타일 장애물 코스 게임</div>
-  <button class="btn btn-primary" id="play-btn">▶ 게임 시작</button>
+  <h1>⭐ 슈퍼 점프맵</h1>
+  <div class="sub">마리오 스타일 3D 장애물 코스</div>
+  <button class="btn btn-red" id="play-btn">▶  게임 시작!</button>
   <div class="controls">
-    WASD / 방향키 이동 &nbsp;|&nbsp; Space 점프 &nbsp;|&nbsp; 마우스 카메라 회전<br>
-    더블 스페이스 더블점프 &nbsp;|&nbsp; ESC 일시정지
+    WASD 이동 &nbsp;|&nbsp; Space 점프 (최대 4번!) &nbsp;|&nbsp; 마우스 카메라<br>
+    🪙 코인 모으기 &nbsp;|&nbsp; ❓ 물음표 블록 밟기 &nbsp;|&nbsp; ESC 일시정지
   </div>
 </div>
 
 <div id="pause-screen">
   <h2>⏸ 일시정지</h2>
   <button class="btn btn-green" id="resume-btn">▶ 계속하기</button>
-  <button class="btn btn-red" id="restart-btn">🔄 처음부터</button>
+  <button class="btn btn-red"   id="restart-btn">🔄 처음부터</button>
 </div>
 
 <div id="clear-screen">
-  <h2>🏆 완주!</h2>
-  <div class="stats" id="clear-stats"></div>
-  <button class="btn btn-primary" id="replay-btn">🔄 다시 하기</button>
+  <h2>🎉 완주!</h2>
+  <div id="clear-stats"></div>
+  <button class="btn btn-yellow" id="replay-btn">🔄 다시 하기</button>
 </div>
 
-<div id="progress-bar-wrap"><div id="progress-bar"></div></div>
-<div id="crosshair"></div>
+<div id="prog-wrap"><div id="prog-bar"></div></div>
 
-<div id="hud-top">
-  <div id="checkpoint-info">
-    <h3>체크포인트</h3>
-    <p id="cp-text">0 / 0</p>
-  </div>
-  <div id="timer-box">
-    <small>⏱ 시간</small>
-    <div id="timer">0.0s</div>
-  </div>
+<div id="hud">
+  <div id="coin-box"><span>🪙</span><div id="coin-count">0</div></div>
+  <div id="timer-box"><small>⏱ 시간</small><div id="timer">0.0s</div></div>
+</div>
+
+<div id="jumps-left">
+  <div class="jump-dot active" id="jd0"></div>
+  <div class="jump-dot active" id="jd1"></div>
+  <div class="jump-dot active" id="jd2"></div>
+  <div class="jump-dot active" id="jd3"></div>
 </div>
 
 <div id="notify"></div>
-<div id="hint">WASD 이동 &nbsp;|&nbsp; Space 점프 &nbsp;|&nbsp; 더블Space 더블점프 &nbsp;|&nbsp; ESC 일시정지</div>
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
 <script src="game.js"></script>

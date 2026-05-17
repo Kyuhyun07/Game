@@ -1,15 +1,12 @@
 // ============================================================
-//  점프맵 오비 (Roblox-style Obby)
-//  - 3인칭 캐릭터
-//  - 체크포인트 시스템
-//  - 다양한 발판: 일반 / 움직이는 / 회전 / 사라지는 / 통통 / 좁은
-//  - 구간별 테마 (7구간)
+//  슈퍼 점프맵 - 마리오 스타일 3D 플랫포머
+//  4단 점프 / 코인 / 물음표 블록 / 파이프 / 체크포인트
 // ============================================================
 
 // ── Scene ──────────────────────────────────────────────────
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x87CEEB);
-scene.fog = new THREE.FogExp2(0x87CEEB, 0.012);
+scene.background = new THREE.Color(0x5c94fc);   // 마리오 하늘색
+scene.fog = new THREE.Fog(0x5c94fc, 60, 160);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -18,538 +15,626 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 document.body.appendChild(renderer.domElement);
 
-const camera = new THREE.PerspectiveCamera(68, window.innerWidth / window.innerHeight, 0.1, 500);
+const camera = new THREE.PerspectiveCamera(68, window.innerWidth / window.innerHeight, 0.1, 300);
 
 // ── Lighting ───────────────────────────────────────────────
-scene.add(new THREE.AmbientLight(0xffffff, 0.6));
-const sun = new THREE.DirectionalLight(0xfffbe0, 1.0);
-sun.position.set(80, 150, 60);
+scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+const sun = new THREE.DirectionalLight(0xfff5cc, 1.1);
+sun.position.set(60, 120, 40);
 sun.castShadow = true;
 sun.shadow.mapSize.set(2048, 2048);
-sun.shadow.camera.left = sun.shadow.camera.bottom = -200;
-sun.shadow.camera.right = sun.shadow.camera.top = 200;
-sun.shadow.camera.far = 500;
+sun.shadow.camera.left = sun.shadow.camera.bottom = -150;
+sun.shadow.camera.right = sun.shadow.camera.top   =  150;
+sun.shadow.camera.far = 400;
 scene.add(sun);
 
-// ── Helpers ────────────────────────────────────────────────
-function makeMesh(geo, color, opacity) {
-  const mat = new THREE.MeshLambertMaterial({
-    color,
-    transparent: opacity !== undefined && opacity < 1,
-    opacity: opacity ?? 1,
-  });
-  const m = new THREE.Mesh(geo, mat);
-  m.castShadow = true;
-  m.receiveShadow = true;
-  return m;
-}
-function mkBox(w, h, d, color, opacity) {
-  return makeMesh(new THREE.BoxGeometry(w, h, d), color, opacity);
-}
-function mkCyl(r, h, color) {
-  return makeMesh(new THREE.CylinderGeometry(r, r, h, 24), color);
-}
-function mkSphere(r, color, opacity) {
-  return makeMesh(new THREE.SphereGeometry(r, 16, 16), color, opacity);
-}
-
-// ── Platform registry ──────────────────────────────────────
-// plat = { mesh, cx,cy,cz, hw,hh,hd, type, ... }
-const platforms = [];
-const dynamics  = [];   // moving/rotating/fading platforms
-let   checkpoints = []; // { pos: Vector3, index }
-let   goalPos = new THREE.Vector3();
-
-function reg(mesh, cx, cy, cz, hw, hh, hd) {
-  const p = { mesh, cx, cy, cz, hw, hh, hd,
-    minX: cx-hw, maxX: cx+hw,
-    minY: cy-hh, maxY: cy+hh,
-    minZ: cz-hd, maxZ: cz+hd,
-    solid: true };
-  platforms.push(p);
-  return p;
-}
-
-function updatePlatBounds(p) {
-  p.minX = p.cx - p.hw; p.maxX = p.cx + p.hw;
-  p.minY = p.cy - p.hh; p.maxY = p.cy + p.hh;
-  p.minZ = p.cz - p.hd; p.maxZ = p.cz + p.hd;
-}
-
-// ── Add helpers ────────────────────────────────────────────
-function addBox(x, y, z, w, h, d, color, opacity) {
-  const m = mkBox(w, h, d, color, opacity);
-  m.position.set(x, y, z);
-  scene.add(m);
-  return reg(m, x, y, z, w/2, h/2, d/2);
-}
-
-function addMoving(x, y, z, w, h, d, color, axis, range, speed) {
-  const p = addBox(x, y, z, w, h, d, color);
-  const o = { ox: x, oy: y, oz: z };
-  const dyn = { p, axis, range, speed, t: Math.random()*Math.PI*2, ...o };
-  dynamics.push(dyn);
-  return p;
-}
-
-function addRotating(x, y, z, armLen, color) {
-  // pivot
-  const pivot = new THREE.Object3D();
-  pivot.position.set(x, y, z);
-  scene.add(pivot);
-  const arm = mkBox(armLen*2, 0.4, 1.2, color);
-  pivot.add(arm);
-  const p = reg(arm, x, y, z, armLen, 0.2, 0.6);
-  p.pivot = pivot;
-  p.armLen = armLen;
-  dynamics.push({ type: 'rotate', p, pivot, speed: 1.2, t: 0 });
-  return p;
-}
-
-// Fading platform - appears and disappears
-function addFading(x, y, z, w, h, d, color, period, offset) {
-  const m = mkBox(w, h, d, color);
-  m.position.set(x, y, z);
-  scene.add(m);
-  const p = reg(m, x, y, z, w/2, h/2, d/2);
-  p.fading = true;
-  dynamics.push({ type: 'fade', p, period: period||3, offset: offset||0 });
-  return p;
-}
-
-// Bouncy platform
-function addBouncy(x, y, z, w, d, color) {
-  const p = addBox(x, y, z, w, 0.5, d, color);
-  p.bouncy = true;
-  p.mesh.material.color.set(color);
-  return p;
-}
-
-// Checkpoint flag
-function addCheckpoint(x, y, z, idx) {
-  const pole = mkCyl(0.12, 4, 0xaaaaaa);
-  pole.position.set(x, y+2, z);
-  scene.add(pole);
-  const flag = mkBox(1.5, 1, 0.05, idx === 0 ? 0x27ae60 : 0xe74c3c);
-  flag.position.set(x+0.75, y+3.5, z);
-  scene.add(flag);
-  checkpoints.push({ pos: new THREE.Vector3(x, y+2, z), index: idx, mesh: flag });
-}
-
-// Goal
-function addGoal(x, y, z) {
-  goalPos.set(x, y, z);
-  const base = mkBox(8, 0.5, 8, 0xffd200);
-  base.position.set(x, y, z);
-  scene.add(base);
-  const trophy = mkSphere(1.5, 0xffd200);
-  trophy.position.set(x, y+3, z);
-  scene.add(trophy);
-  const pillar = mkCyl(0.4, 40, 0xffd200);
-  pillar.material.transparent = true; pillar.material.opacity = 0.15;
-  pillar.position.set(x, y+20, z);
-  scene.add(pillar);
-  // Star ring
-  for (let i = 0; i < 8; i++) {
-    const s = mkSphere(0.35, 0xffd200);
-    const a = (i/8)*Math.PI*2;
-    s.position.set(x+Math.cos(a)*3, y+3, z+Math.sin(a)*3);
-    scene.add(s);
+// ── Material cache ─────────────────────────────────────────
+const matCache = {};
+function getMat(color, opacity) {
+  const key = `${color}_${opacity??1}`;
+  if (!matCache[key]) {
+    matCache[key] = new THREE.MeshLambertMaterial({
+      color,
+      transparent: opacity !== undefined && opacity < 1,
+      opacity: opacity ?? 1,
+    });
   }
+  return matCache[key];
 }
-
-// Deco: cloud
-function addCloud(x, y, z) {
-  const g = new THREE.Group();
-  [[0,0,0,4,2,3],[2,0.5,0,3,1.5,2],[-2,0.3,0,3,1.5,2],[0,0,2,3,1.5,2]].forEach(([dx,dy,dz,w,h,d])=>{
-    const c = mkBox(w,h,d,0xffffff,0.9); c.position.set(x+dx,y+dy,z+dz); scene.add(c);
-  });
-}
-
-// ── World builder ──────────────────────────────────────────
-function buildWorld() {
-  platforms.length = 0;
-  dynamics.length  = 0;
-  checkpoints      = [];
-  scene.clear();
-  scene.add(new THREE.AmbientLight(0xffffff, 0.6));
-  scene.add(sun);
-  scene.add(charGroup);
-
-  // 구름
-  for (let i = 0; i < 20; i++)
-    addCloud((Math.random()-.5)*300, 20+Math.random()*15, -100-Math.random()*600);
-
-  // 바닥 (아래 떨어지면 죽는 용도 - 시각적 바닥)
-  const ground = mkBox(300, 1, 1000, 0x5a8a3c, 0.3);
-  ground.material.transparent = true;
-  ground.position.set(0, -6, -350);
-  scene.add(ground);
-
-  // ═══════════════════════════════════════════════════════
-  //  구간 1 – 시작 / 넓은 발판 (초록)
-  // ═══════════════════════════════════════════════════════
-  addCheckpoint(0, 0, 0, 0);
-  addBox(0, -0.5, 0, 14, 1, 14, 0x27ae60);  // 시작
-
-  const s1 = [
-    [0,  0, -16,  7, 1,  7, 0x2ecc71],
-    [5,  0, -26,  6, 1,  6, 0x27ae60],
-    [-4, 0, -36,  6, 1,  6, 0x2ecc71],
-    [3,  0, -46,  6, 1,  6, 0x27ae60],
-    [0,  0, -56,  8, 1,  8, 0x2ecc71],
-    [-5, 0, -66,  5, 1,  5, 0x27ae60],
-    [4,  0, -76,  5, 1,  5, 0x2ecc71],
-    [0,  0, -88,  9, 1,  9, 0x27ae60],  // CP1
-  ];
-  s1.forEach(([x,y,z,w,h,d,c])=>addBox(x,y,z,w,h,d,c));
-  addCheckpoint(0, 1, -88, 1);
-
-  // ═══════════════════════════════════════════════════════
-  //  구간 2 – 좁은 징검다리 (파랑)
-  // ═══════════════════════════════════════════════════════
-  const s2 = [
-    [ 5, 0,-100, 3,1,3, 0x3498db],
-    [-4, 0,-110, 3,1,3, 0x2980b9],
-    [ 5, 0,-120, 3,1,3, 0x3498db],
-    [ 0, 0,-130, 3,1,3, 0x2980b9],
-    [-5, 0,-140, 3,1,3, 0x3498db],
-    [ 4, 0,-150, 3,1,3, 0x2980b9],
-    [ 0, 0,-160, 3,1,3, 0x3498db],
-    [-4, 0,-170, 3,1,3, 0x2980b9],
-    [ 0, 0,-182, 8,1,8, 0x3498db],  // CP2
-  ];
-  s2.forEach(([x,y,z,w,h,d,c])=>addBox(x,y,z,w,h,d,c));
-  addCheckpoint(0, 1, -182, 2);
-
-  // ═══════════════════════════════════════════════════════
-  //  구간 3 – 움직이는 발판 (빨강)
-  // ═══════════════════════════════════════════════════════
-  addBox(0, 0, -196, 6,1,6, 0xe74c3c);
-  addMoving( 0, 0,-210, 5,1,4, 0xe74c3c, 'x', 8, 1.8);
-  addMoving( 0, 0,-224, 4,1,4, 0xc0392b, 'x', 7, 2.1);
-  addMoving( 0, 0,-238, 4,1,5, 0xe74c3c, 'x', 9, 1.5);
-  addMoving( 0, 0,-252, 5,1,4, 0xc0392b, 'x', 7, 2.3);
-  addMoving( 0, 0,-266, 4,1,4, 0xe74c3c, 'x', 8, 2.0);
-  addMoving( 0, 0,-280, 4,1,5, 0xc0392b, 'x', 6, 1.7);
-  addBox(0, 0, -294, 8,1,8, 0xe74c3c);  // CP3
-  addCheckpoint(0, 1, -294, 3);
-
-  // ═══════════════════════════════════════════════════════
-  //  구간 4 – 사라지는 발판 (보라)
-  // ═══════════════════════════════════════════════════════
-  addBox(0, 0, -308, 6,1,6, 0x9b59b6);
-  [
-    [ 5, 0,-320, 3,1,3, 0x8e44ad, 2.5, 0.0],
-    [-4, 0,-330, 3,1,3, 0x9b59b6, 2.5, 0.6],
-    [ 4, 0,-340, 3,1,3, 0x8e44ad, 2.5, 1.2],
-    [ 0, 0,-350, 3,1,3, 0x9b59b6, 2.5, 0.3],
-    [-5, 0,-360, 3,1,3, 0x8e44ad, 2.5, 0.9],
-    [ 4, 0,-370, 3,1,3, 0x9b59b6, 2.5, 0.5],
-    [ 0, 0,-380, 3,1,3, 0x8e44ad, 2.5, 1.5],
-    [ 0, 0,-392, 8,1,8, 0x9b59b6, 2.5, 0.0],  // CP4
-  ].forEach(([x,y,z,w,h,d,c,per,off])=>addFading(x,y,z,w,h,d,c,per,off));
-  addCheckpoint(0, 1, -392, 4);
-
-  // ═══════════════════════════════════════════════════════
-  //  구간 5 – 통통 발판 (노랑)
-  // ═══════════════════════════════════════════════════════
-  addBox(0, 0, -406, 6,1,6, 0xf1c40f);
-  addBouncy( 0, 0,-420, 6,6, 0xf1c40f);
-  addBox(   10, 0,-432, 4,1,4, 0xe67e22);
-  addBouncy( 0, 0,-446, 6,6, 0xf39c12);
-  addBox(  -10, 0,-458, 4,1,4, 0xe67e22);
-  addBouncy( 0, 0,-472, 6,6, 0xf1c40f);
-  addBox(    8, 0,-484, 4,1,4, 0xe67e22);
-  addBox(    0, 0,-496, 8,1,8, 0xf1c40f);  // CP5
-  addCheckpoint(0, 1, -496, 5);
-
-  // ═══════════════════════════════════════════════════════
-  //  구간 6 – 회전 장애물 (주황)
-  // ═══════════════════════════════════════════════════════
-  addBox(0, 0, -510, 6,1,6, 0xe67e22);
-  [
-    [ 5, 0,-522],
-    [-4, 0,-534],
-    [ 4, 0,-546],
-    [ 0, 0,-558],
-    [-5, 0,-570],
-    [ 4, 0,-582],
-    [ 0, 0,-594],
-    [-4, 0,-606],
-  ].forEach(([x,y,z],i)=>{
-    addBox(x,y,z,3,1,3,i%2===0?0xe67e22:0xd35400);
-    const bar = mkBox(7,0.5,1,0xe74c3c);
-    const piv = new THREE.Object3D();
-    piv.position.set(x, y+1.8, z);
-    scene.add(piv); piv.add(bar);
-    dynamics.push({type:'rotate',pivot:piv,speed:0.9+(i%3)*0.35,t:i*0.8,
-      isKiller:true, kx:x, ky:y+1.8, kz:z, kRange:3.5});
-  });
-  addBox(0, 0, -620, 8,1,8, 0xe67e22);
-  addCheckpoint(0, 1, -620, 6);
-
-  // ═══════════════════════════════════════════════════════
-  //  구간 7 – 최종 혼합 (무지개)
-  // ═══════════════════════════════════════════════════════
-  addBox(0, 0, -634, 8,1,8, 0x3498db);
-  addMoving( 0, 0,-648, 3,1,3, 0xe74c3c, 'x', 7, 2.5);
-  addMoving( 5, 0,-660, 3,1,3, 0x9b59b6, 'x', 6, 2.8);
-  addFading(-3, 0,-672, 3,1,3, 0xf1c40f, 2,   0.0);
-  addFading( 4, 0,-684, 3,1,3, 0x2ecc71, 2,   1.0);
-  addMoving( 0, 0,-696, 3,1,3, 0xe67e22, 'x', 5, 3.0);
-  addMoving(-5, 0,-708, 3,1,3, 0xe74c3c, 'x', 6, 2.3);
-  addFading( 3, 0,-720, 3,1,3, 0x9b59b6, 2,   0.5);
-  addMoving( 0, 0,-732, 3,1,3, 0x3498db, 'x', 8, 2.6);
-  addFading(-4, 0,-744, 3,1,3, 0xf1c40f, 2,   1.2);
-  addMoving( 4, 0,-756, 3,1,3, 0xe74c3c, 'x', 7, 2.9);
-  addBox(0, 0, -770, 12,1,12, 0xffd200);
-
-  addGoal(0, 1, -785);
-}
-
-// ── Character (로블록스 R6 스타일) ─────────────────────────
-// 색상
-const C_SKIN  = 0xffcc00;   // 노란 피부
-const C_SHIRT = 0x1565c0;   // 파란 셔츠
-const C_PANTS = 0x0d1b6e;   // 진파랑 바지
-const C_WHITE = 0xffffff;
-const C_BLACK = 0x111111;
-
-const charGroup = new THREE.Group();
-scene.add(charGroup);
-
-function mkPart(w,h,d,color){
-  const m = mkBox(w,h,d,color);
+function mkMesh(geo, color, opacity) {
+  const m = new THREE.Mesh(geo, getMat(color, opacity).clone());
   m.castShadow = true; m.receiveShadow = true;
   return m;
 }
+const BOX = (w,h,d) => new THREE.BoxGeometry(w,h,d);
+const CYL = (r,h,s=16) => new THREE.CylinderGeometry(r,r,h,s);
+const SPHERE = (r,s=16) => new THREE.SphereGeometry(r,s,s);
 
-// ─ 몸통 (Torso): 1.2 x 1.4 x 0.7
-const torso = mkPart(1.2, 1.4, 0.7, C_SHIRT);
+function mkBox(w,h,d,c,op){ return mkMesh(BOX(w,h,d),c,op); }
+function mkCyl(r,h,c)     { return mkMesh(CYL(r,h),c); }
+function mkSphere(r,c,op) { return mkMesh(SPHERE(r),c,op); }
 
-// ─ 머리 (Head): 1.2 x 1.2 x 1.2  (정사각형, 로블록스 특징)
-const head = mkPart(1.2, 1.2, 1.2, C_SKIN);
+// ── Platform system ────────────────────────────────────────
+const platforms  = [];
+const dynamics   = [];
+const coins      = [];
+const qblocks    = [];
+let   checkpoints = [];
+let   goalPos = new THREE.Vector3();
+let   totalCoins = 0;
+let   collectedCoins = 0;
 
-// 얼굴 — 흰 눈 + 검은 눈동자 + 웃음
-const lEyeW = mkBox(0.28, 0.22, 0.05, C_WHITE); lEyeW.position.set(-0.24, 0.1,  0.61);
-const rEyeW = mkBox(0.28, 0.22, 0.05, C_WHITE); rEyeW.position.set( 0.24, 0.1,  0.61);
-const lPupil = mkBox(0.12, 0.15, 0.05, C_BLACK); lPupil.position.set(-0.24, 0.08, 0.62);
-const rPupil = mkBox(0.12, 0.15, 0.05, C_BLACK); rPupil.position.set( 0.24, 0.08, 0.62);
-// 웃음 (3개 작은 박스로 곡선처럼)
-const smL = mkBox(0.14, 0.07, 0.04, C_BLACK); smL.position.set(-0.14,-0.20, 0.62); smL.rotation.z =  0.5;
-const smM = mkBox(0.16, 0.07, 0.04, C_BLACK); smM.position.set(    0,-0.25, 0.62);
-const smR = mkBox(0.14, 0.07, 0.04, C_BLACK); smR.position.set( 0.14,-0.20, 0.62); smR.rotation.z = -0.5;
-[lEyeW, rEyeW, lPupil, rPupil, smL, smM, smR].forEach(p => head.add(p));
+function regPlat(mesh, cx,cy,cz, hw,hh,hd, extra={}) {
+  const p = { mesh, cx,cy,cz, hw,hh,hd,
+    minX:cx-hw, maxX:cx+hw,
+    minY:cy-hh, maxY:cy+hh,
+    minZ:cz-hd, maxZ:cz+hd,
+    solid:true, ...extra };
+  platforms.push(p);
+  return p;
+}
+function updBounds(p) {
+  p.minX=p.cx-p.hw; p.maxX=p.cx+p.hw;
+  p.minY=p.cy-p.hh; p.maxY=p.cy+p.hh;
+  p.minZ=p.cz-p.hd; p.maxZ=p.cz+p.hd;
+}
 
-// ─ 팔 (Arm): 0.55 x 1.3 x 0.55  — 피부색 (로블록스 기본)
-const lArm = mkPart(0.55, 1.3, 0.55, C_SKIN);
-const rArm = mkPart(0.55, 1.3, 0.55, C_SKIN);
-// 셔츠 소매 (위쪽 절반)
-const lSleeve = mkPart(0.56, 0.65, 0.56, C_SHIRT); lSleeve.position.set(0,  0.33, 0);
-const rSleeve = mkPart(0.56, 0.65, 0.56, C_SHIRT); rSleeve.position.set(0,  0.33, 0);
-lArm.add(lSleeve); rArm.add(rSleeve);
+// ─ 벽돌 발판 ─
+function addPlat(x,y,z,w,h,d,color) {
+  const m = mkBox(w,h,d,color);
+  // 벽돌 라인 (검정 테두리 효과)
+  const edge = new THREE.LineSegments(
+    new THREE.EdgesGeometry(BOX(w,h,d)),
+    new THREE.LineBasicMaterial({color:0x000000, transparent:true, opacity:0.25})
+  );
+  m.add(edge);
+  m.position.set(x,y,z);
+  scene.add(m);
+  return regPlat(m,x,y,z,w/2,h/2,d/2);
+}
 
-// ─ 다리 (Leg): 0.55 x 1.3 x 0.55 — 바지색
-const lLeg = mkPart(0.55, 1.3, 0.55, C_PANTS);
-const rLeg = mkPart(0.55, 1.3, 0.55, C_PANTS);
-// 신발 (아랫부분)
-const lShoe = mkPart(0.56, 0.3, 0.58, C_BLACK); lShoe.position.set(0, -0.52, 0);
-const rShoe = mkPart(0.56, 0.3, 0.58, C_BLACK); rShoe.position.set(0, -0.52, 0);
+// ─ 움직이는 발판 ─
+function addMoving(x,y,z,w,h,d,color,axis,range,speed) {
+  const p = addPlat(x,y,z,w,h,d,color);
+  dynamics.push({ type:'move', p, axis, range, speed, t:Math.random()*Math.PI*2, ox:x,oy:y,oz:z });
+  return p;
+}
+
+// ─ 사라지는 발판 ─
+function addFading(x,y,z,w,d,color,period,offset) {
+  const p = addPlat(x,y,z,w,0.6,d,color);
+  p.fading = true;
+  dynamics.push({ type:'fade', p, period:period||3, t:offset||0 });
+  return p;
+}
+
+// ─ 물음표 블록 ─
+function addQBlock(x,y,z) {
+  const m = mkBox(1.2,1.2,1.2,0xf39c12);
+  // ? 표시 (검은 작은 박스들)
+  const q1 = mkBox(0.22,0.35,0.05,0x000000); q1.position.set( 0,  0.1, 0.61);
+  const q2 = mkBox(0.22,0.15,0.05,0x000000); q2.position.set( 0, -0.2, 0.61);
+  const q3 = mkBox(0.08,0.08,0.05,0x000000); q3.position.set( 0, -0.4, 0.61);
+  m.add(q1); m.add(q2); m.add(q3);
+  m.position.set(x,y,z);
+  scene.add(m);
+  const p = regPlat(m,x,y,z,0.6,0.6,0.6,{isQBlock:true, hit:false});
+  qblocks.push(p);
+  return p;
+}
+
+// ─ 파이프 ─
+function addPipe(x,y,z,h=3) {
+  const body = mkCyl(0.9,h,0x27ae60);
+  const rim  = mkCyl(1.05,0.35,0x2ecc71);
+  body.position.set(x, y+h/2, z);
+  rim.position.set(x, y+h+0.17, z);
+  scene.add(body); scene.add(rim);
+  // 파이프도 충돌체로 등록
+  regPlat(body,x,y+h/2,z,0.9,h/2,0.9);
+}
+
+// ─ 코인 ─
+function addCoin(x,y,z) {
+  const m = mkCyl(0.35,0.12,0xffd700);
+  m.rotation.x = Math.PI/2;
+  m.position.set(x,y,z);
+  scene.add(m);
+  coins.push({mesh:m, x,y,z, collected:false});
+  totalCoins++;
+}
+
+// ─ 체크포인트 깃발 ─
+function addCheckpoint(x,y,z,idx) {
+  const pole = mkCyl(0.1,4,0xcccccc);
+  pole.position.set(x, y+2, z);
+  scene.add(pole);
+  const flag = mkBox(1.4,0.9,0.05,idx===0?0x27ae60:0xe74c3c);
+  flag.position.set(x+0.7, y+3.6, z);
+  scene.add(flag);
+  // 별
+  const star = mkSphere(0.25,0xffd700);
+  star.position.set(x, y+4.3, z);
+  scene.add(star);
+  checkpoints.push({ pos:new THREE.Vector3(x,y+2.2,z), index:idx, flagMesh:flag });
+}
+
+// ─ 골 ─
+function addGoal(x,y,z) {
+  goalPos.set(x,y,z);
+  // 성 (간단한 버전)
+  const base = mkBox(10,1,10,0xf5f5dc);
+  base.position.set(x,y,z);
+  scene.add(base);
+  const tower = mkBox(3,6,3,0xf0e0b0);
+  tower.position.set(x,y+3.5,z);
+  scene.add(tower);
+  const roof = mkBox(3.4,1,3.4,0xe74c3c);
+  roof.position.set(x,y+6.5,z);
+  scene.add(roof);
+  const flag = mkBox(0.2,2,0.2,0xaaaaaa);
+  flag.position.set(x,y+7.5,z);
+  scene.add(flag);
+  const flagTop = mkBox(1,0.7,0.05,0xe74c3c);
+  flagTop.position.set(x+0.5,y+8.1,z);
+  scene.add(flagTop);
+  // 빛기둥
+  const pillar = mkCyl(0.5,30,0xffd700,8);
+  pillar.material.transparent=true; pillar.material.opacity=0.18;
+  pillar.position.set(x,y+15,z);
+  scene.add(pillar);
+}
+
+// ─ 구름 ─
+function addCloud(x,y,z) {
+  [[0,0,0,3.5,1.5,2.5],[2,0.4,0,2.5,1.2,2],[-2,0.3,0,2.5,1.2,2]].forEach(([dx,dy,dz,w,h,d])=>{
+    const m = mkBox(w,h,d,0xffffff,0.92);
+    m.position.set(x+dx,y+dy,z+dz);
+    scene.add(m);
+  });
+}
+
+// ── World ─────────────────────────────────────────────────
+function buildWorld() {
+  // 초기화
+  platforms.length=0; dynamics.length=0;
+  coins.length=0; qblocks.length=0; checkpoints=[];
+  totalCoins=0; collectedCoins=0;
+  scene.clear();
+  scene.add(new THREE.AmbientLight(0xffffff,0.7));
+  scene.add(sun);
+  scene.add(charGroup);
+
+  // 구름 배치
+  for(let i=0;i<18;i++)
+    addCloud((Math.random()-.5)*180, 18+Math.random()*12, -50-Math.random()*700);
+
+  // ═══════════════════════════════════════════════
+  //  구간 1 – 초록 들판 (Green Hills)
+  // ═══════════════════════════════════════════════
+  addCheckpoint(0,0,0,0);
+  addPlat(0,-0.5,0,14,1,14,0x5aad3c);  // 시작
+
+  // 풀밭 발판들 (넓고 쉬움)
+  [[0,0,-14,8,1,8],[6,0,-25,6,1,6],[-5,0,-35,6,1,6],
+   [4,0,-45,7,1,7],[-3,0,-55,6,1,6],[0,0,-65,8,1,8],
+   [5,0,-75,5,1,5],[-4,0,-85,6,1,6],[0,0,-97,10,1,10]
+  ].forEach(([x,y,z,w,h,d])=>addPlat(x,y,z,w,h,d,0x5aad3c));
+
+  // 파이프 장식
+  addPipe(3,0,-30,2.5); addPipe(-4,0,-60,2);
+
+  // 코인들
+  [-14,-25,-35,-45,-55,-65,-75,-85].forEach((z,i)=>{
+    addCoin(i%2===0?2:-2, 2.5, z);
+  });
+  addQBlock(0,3,-50);
+
+  addCheckpoint(0,1,-97,1);
+
+  // ═══════════════════════════════════════════════
+  //  구간 2 – 징검다리 + 코인 (Coin Road)
+  // ═══════════════════════════════════════════════
+  [[5,0,-110,4,1,4,0xe8c46a],[-4,0,-120,4,1,4,0xe8c46a],
+   [4,0,-130,3,1,3,0xe8c46a],[0,0,-140,3,1,3,0xc8a44a],
+   [-5,0,-150,3,1,3,0xe8c46a],[4,0,-160,3,1,3,0xc8a44a],
+   [0,0,-170,3,1,3,0xe8c46a],[-4,0,-180,4,1,4,0xc8a44a],
+   [0,0,-192,9,1,9,0xe8c46a]
+  ].forEach(([x,y,z,w,h,d,c])=>addPlat(x,y,z,w,h,d,c));
+
+  // 공중 코인 라인
+  for(let i=0;i<8;i++) addCoin(0, 3.5, -110-i*10);
+  addQBlock(-4,3.5,-140); addQBlock(4,3.5,-160);
+  addPipe(6,0,-145,3); addPipe(-5,0,-165,2.5);
+
+  addCheckpoint(0,1,-192,2);
+
+  // ═══════════════════════════════════════════════
+  //  구간 3 – 움직이는 발판 (Moving Road)
+  // ═══════════════════════════════════════════════
+  addPlat(0,0,-205,6,1,6,0xe74c3c);
+  addMoving(0,0,-218,5,1,4,0xe74c3c,'x',7,1.8);
+  addMoving(0,0,-230,4,1,4,0xc0392b,'x',8,2.0);
+  addMoving(0,0,-242,5,1,5,0xe74c3c,'x',6,1.6);
+  addMoving(0,0,-254,4,1,4,0xc0392b,'x',7,2.2);
+  addMoving(0,0,-266,4,1,4,0xe74c3c,'x',8,1.9);
+  addMoving(0,0,-278,5,1,4,0xc0392b,'x',6,2.1);
+  addPlat(0,0,-292,9,1,9,0xe74c3c);
+
+  // 코인은 중간 지점 고정 위치에
+  [-218,-230,-242,-254,-266,-278].forEach(z=>addCoin(0,2.8,z));
+  addQBlock(0,3.5,-248);
+
+  addCheckpoint(0,1,-292,3);
+
+  // ═══════════════════════════════════════════════
+  //  구간 4 – 사라지는 발판 (Ghost House)
+  // ═══════════════════════════════════════════════
+  addPlat(0,0,-305,7,1,7,0x9b59b6);
+
+  [[5,0,-316,3.5,3.5,0x8e44ad,2.5,0.0],
+   [-4,0,-326,3.5,3.5,0x9b59b6,2.5,0.7],
+   [4,0,-336,3.5,3.5,0x8e44ad,2.5,1.3],
+   [0,0,-346,3.5,3.5,0x9b59b6,2.5,0.4],
+   [-4,0,-356,3.5,3.5,0x8e44ad,2.5,1.0],
+   [4,0,-366,3.5,3.5,0x9b59b6,2.5,0.2],
+   [0,0,-376,3.5,3.5,0x8e44ad,2.5,1.6],
+   [0,0,-388,9,1,9,0x9b59b6,99,0]
+  ].forEach(([x,y,z,w,d,c,per,off])=>addFading(x,y,z,w,d,c,per,off));
+
+  // 코인
+  [-316,-336,-356,-376].forEach((z,i)=>addCoin(i%2===0?3:-3,2.5,z));
+  addQBlock(0,3,-346);
+
+  addCheckpoint(0,1,-388,4);
+
+  // ═══════════════════════════════════════════════
+  //  구간 5 – 통통 발판 (Bounce Land)
+  // ═══════════════════════════════════════════════
+  addPlat(0,0,-401,7,1,7,0xf1c40f);
+
+  // 통통 발판 (노란색, 밟으면 높이 뜀)
+  function addBouncy2(x,y,z,w,d) {
+    const p = addPlat(x,y,z,w,0.5,d,0xffd700);
+    p.bouncy=true;
+    // 줄무늬 표시
+    const stripe = mkBox(w,0.15,d,0xf39c12);
+    stripe.position.set(0,0.15,0);
+    p.mesh.add(stripe);
+    return p;
+  }
+
+  addBouncy2(0,0,-414,6,6);
+  addPlat(9,0,-425,4,1,4,0xf1c40f);
+  addBouncy2(0,0,-438,6,6);
+  addPlat(-9,0,-450,4,1,4,0xe67e22);
+  addBouncy2(0,0,-463,6,6);
+  addPlat(9,0,-475,4,1,4,0xf1c40f);
+  addPlat(0,0,-488,8,1,8,0xf1c40f);
+
+  [-414,-438,-463].forEach(z=>{ addCoin(-2,3,z); addCoin(2,3,z); });
+  addQBlock(0,3.5,-451);
+  addPipe(6,0,-465,2.5);
+
+  addCheckpoint(0,1,-488,5);
+
+  // ═══════════════════════════════════════════════
+  //  구간 6 – 좁은 다리 + 파이프 (Pipe Kingdom)
+  // ═══════════════════════════════════════════════
+  addPlat(0,0,-501,7,1,7,0x27ae60);
+
+  // 좁은 다리 발판들
+  const s6=[
+    [5,0,-512,3,1,3,0x27ae60],[0,0,-522,3,1,3,0x2ecc71],
+    [-5,0,-532,3,1,3,0x27ae60],[4,0,-542,3,1,3,0x2ecc71],
+    [0,0,-552,3,1,3,0x27ae60],[-4,0,-562,3,1,3,0x2ecc71],
+    [4,0,-572,3,1,3,0x27ae60],[0,0,-582,3,1,3,0x2ecc71],
+    [0,0,-594,9,1,9,0x27ae60]
+  ];
+  s6.forEach(([x,y,z,w,h,d,c])=>addPlat(x,y,z,w,h,d,c));
+
+  // 파이프들 (장애물)
+  addPipe(5,0,-522,3.5); addPipe(-5,0,-542,3);
+  addPipe(4,0,-562,4); addPipe(-4,0,-572,3);
+
+  // 코인
+  [-512,-532,-552,-572].forEach((z,i)=>addCoin(i%2===0?2:-2,2.5,z));
+  addQBlock(0,3.5,-552);
+
+  addCheckpoint(0,1,-594,6);
+
+  // ═══════════════════════════════════════════════
+  //  구간 7 – 최종 혼합 (Final World)
+  // ═══════════════════════════════════════════════
+  addPlat(0,0,-607,8,1,8,0x3498db);
+  addMoving(0,0,-620,4,1,4,0xe74c3c,'x',7,2.5);
+  addFading(5,0,-632,3.5,3.5,0x9b59b6,2,0);
+  addMoving(0,0,-644,4,1,4,0xf1c40f,'x',6,2.8);
+  addFading(-4,0,-656,3.5,3.5,0x8e44ad,2,1);
+  addMoving(0,0,-668,4,1,4,0xe67e22,'x',8,2.3);
+  addFading(4,0,-680,3.5,3.5,0x9b59b6,2,0.5);
+  addMoving(0,0,-692,4,1,4,0xe74c3c,'x',7,2.9);
+  addPlat(0,0,-706,12,1,12,0xffd700);
+
+  // 코인 라인
+  for(let i=0;i<7;i++) addCoin(0,3,-620-i*12);
+  addQBlock(0,3.5,-644); addQBlock(0,3.5,-668);
+
+  // 골 성
+  addGoal(0,1,-722);
+}
+
+// ── 마리오 캐릭터 ──────────────────────────────────────────
+const charGroup = new THREE.Group();
+scene.add(charGroup);
+
+// 색상
+const C_RED   = 0xdd2222;
+const C_BLUE  = 0x2244cc;
+const C_SKIN  = 0xffcc88;
+const C_BROWN = 0x8B4513;
+const C_WHITE = 0xffffff;
+const C_BLACK = 0x111111;
+const C_DARK  = 0x331100;
+
+function pt(w,h,d,c){ const m=mkBox(w,h,d,c); m.castShadow=true; return m; }
+
+// 몸 (파란 오버올)
+const body    = pt(1.1, 1.2, 0.65, C_BLUE);
+// 셔츠 (빨간색, 몸통 위)
+const shirt   = pt(1.12, 0.5, 0.66, C_RED);  shirt.position.set(0, 0.35, 0);
+// 머리
+const head    = pt(1.1, 1.0, 1.0, C_SKIN);
+// 모자 (빨간)
+const hatBrim = pt(1.35, 0.15, 1.25, C_RED); hatBrim.position.set(0, 0.5, 0.0);
+const hatTop  = pt(0.95, 0.55, 1.05, C_RED); hatTop.position.set(0, 0.8, -0.05);
+// 콧수염 (갈색)
+const mustL   = pt(0.28, 0.12, 0.06, C_BROWN); mustL.position.set(-0.2,-0.08,0.52);
+const mustR   = pt(0.28, 0.12, 0.06, C_BROWN); mustR.position.set( 0.2,-0.08,0.52);
+// 눈
+const lEye    = pt(0.18, 0.18, 0.06, C_WHITE); lEye.position.set(-0.22, 0.12, 0.52);
+const rEye    = pt(0.18, 0.18, 0.06, C_WHITE); rEye.position.set( 0.22, 0.12, 0.52);
+const lPupil  = pt(0.09, 0.12, 0.06, C_BLACK); lPupil.position.set(-0.22,0.10,0.53);
+const rPupil  = pt(0.09, 0.12, 0.06, C_BLACK); rPupil.position.set( 0.22,0.10,0.53);
+// 코
+const nose    = pt(0.18, 0.14, 0.12, C_SKIN);  nose.position.set(0,0,0.52);
+
+head.add(hatBrim); head.add(hatTop);
+head.add(lEye); head.add(rEye); head.add(lPupil); head.add(rPupil);
+head.add(mustL); head.add(mustR); head.add(nose);
+body.add(shirt);
+
+// 팔 (빨간 셔츠 소매)
+const lArm = pt(0.4, 1.1, 0.45, C_RED);
+const rArm = pt(0.4, 1.1, 0.45, C_RED);
+// 손 (피부)
+const lHand = pt(0.42, 0.35, 0.42, C_SKIN); lHand.position.set(0,-0.55,0);
+const rHand = pt(0.42, 0.35, 0.42, C_SKIN); rHand.position.set(0,-0.55,0);
+lArm.add(lHand); rArm.add(rHand);
+
+// 다리 (파란 오버올)
+const lLeg = pt(0.48, 1.15, 0.52, C_BLUE);
+const rLeg = pt(0.48, 1.15, 0.52, C_BLUE);
+// 신발 (갈색)
+const lShoe = pt(0.52, 0.32, 0.65, C_BROWN); lShoe.position.set(0,-0.5,0.05);
+const rShoe = pt(0.52, 0.32, 0.65, C_BROWN); rShoe.position.set(0,-0.5,0.05);
 lLeg.add(lShoe); rLeg.add(rShoe);
 
-// ─ 목
-const neck = mkPart(0.4, 0.2, 0.4, C_SKIN);
+// 위치 조립
+body.position.set(0, 0, 0);
+head.position.set(0, 1.15, 0);
+lArm.position.set(-0.77, 0.05, 0);
+rArm.position.set( 0.77, 0.05, 0);
+lLeg.position.set(-0.3, -1.17, 0);
+rLeg.position.set( 0.3, -1.17, 0);
 
-// ─ 위치 배치 (로블록스 R6 비율)
-//   torso 중심 = (0, 0, 0)
-//   head  중심 = torso 위 + 반높이 + 목 + 반머리
-neck.position.set(0,  0.8,  0);          // 몸통 위
-head.position.set(0,  1.05, 0);          // 목 위
-
-lArm.position.set(-0.875, 0.05, 0);      // 왼쪽 어깨
-rArm.position.set( 0.875, 0.05, 0);      // 오른쪽 어깨
-
-lLeg.position.set(-0.325, -1.35, 0);     // 왼쪽 다리
-rLeg.position.set( 0.325, -1.35, 0);     // 오른쪽 다리
-
-[torso, neck, head, lArm, rArm, lLeg, rLeg].forEach(p => charGroup.add(p));
+[body, head, lArm, rArm, lLeg, rLeg].forEach(p=>charGroup.add(p));
 
 // ── Physics ────────────────────────────────────────────────
 const charPos = new THREE.Vector3(0, 3, 0);
 let charVelY  = 0;
 let charYaw   = 0;
 let onGround  = false;
-let jumpsLeft = 2;         // 더블 점프
-const GRAVITY = -24;
-const JUMP_F  = 9.5;
+let jumpsLeft = 4;          // ★ 4단 점프
+const GRAVITY = -22;
+const JUMP_F  = 9.0;
 const SPEED   = 7.5;
-const CHAR_H  = 1.72;
+const CHAR_H  = 1.75;
+const MAX_JUMPS = 4;
 
 // ── Camera ─────────────────────────────────────────────────
 let camYaw   = 0;
-let camPitch = 0.35;
+let camPitch = 0.3;
 let camDist  = 10;
 let pointerLocked = false;
 
-document.addEventListener('mousemove', e => {
-  if (!pointerLocked) return;
-  camYaw   -= e.movementX * 0.003;
-  camPitch += e.movementY * 0.003;
-  camPitch = Math.max(-0.2, Math.min(1.2, camPitch));
+document.addEventListener('mousemove', e=>{
+  if(!pointerLocked) return;
+  camYaw   -= e.movementX*0.003;
+  camPitch += e.movementY*0.003;
+  camPitch = Math.max(-0.15, Math.min(1.1, camPitch));
 });
 document.addEventListener('wheel', e=>{
-  camDist = Math.max(4, Math.min(20, camDist + e.deltaY*0.01));
+  camDist = Math.max(4,Math.min(18,camDist+e.deltaY*0.01));
 });
-document.addEventListener('pointerlockchange', ()=>{
-  pointerLocked = document.pointerLockElement === renderer.domElement;
-  if (!pointerLocked && gameRunning)
-    pauseScreen.style.display = 'flex';
+document.addEventListener('pointerlockchange',()=>{
+  pointerLocked = document.pointerLockElement===renderer.domElement;
+  if(!pointerLocked&&gameRunning) pauseScreen.style.display='flex';
 });
 
 // ── Input ──────────────────────────────────────────────────
-const keys = {};
-document.addEventListener('keydown', e=>{
-  if (keys[e.code]) return;
-  keys[e.code] = true;
-  if (e.code==='Escape'&&gameRunning){
+const keys={};
+document.addEventListener('keydown',e=>{
+  if(keys[e.code]) return;
+  keys[e.code]=true;
+  if(e.code==='Escape'&&gameRunning){
     if(pointerLocked) document.exitPointerLock();
     else renderer.domElement.requestPointerLock();
   }
-  if (e.code==='Space'&&gameRunning&&pointerLocked){
-    if (jumpsLeft > 0){
+  if(e.code==='Space'&&gameRunning&&pointerLocked){
+    if(jumpsLeft>0){
       charVelY = JUMP_F;
       jumpsLeft--;
-      if (!onGround) showNotify('✨ 더블점프!', 0.7);
-      onGround = false;
+      if(jumpsLeft===2) showNotify('2단 점프!',0.6);
+      else if(jumpsLeft===1) showNotify('3단 점프! ✨',0.6);
+      else if(jumpsLeft===0) showNotify('4단 점프! 🌟',0.8);
+      onGround=false;
+      updateJumpDots();
     }
   }
 });
-document.addEventListener('keyup', e=>{ keys[e.code]=false; });
+document.addEventListener('keyup',e=>{keys[e.code]=false;});
 
-// ── Notify ────────────────────────────────────────────────
-const notifyEl = document.getElementById('notify');
-let notifyTimer = null;
-function showNotify(msg, dur=2) {
-  notifyEl.textContent = msg;
-  notifyEl.style.opacity = 1;
-  clearTimeout(notifyTimer);
-  notifyTimer = setTimeout(()=>{ notifyEl.style.opacity=0; }, dur*1000);
+// ── 점프 도트 UI ───────────────────────────────────────────
+function updateJumpDots(){
+  for(let i=0;i<4;i++){
+    const d=document.getElementById(`jd${i}`);
+    d.className='jump-dot'+(i<jumpsLeft?' active':'');
+  }
 }
 
-// ── Collision ─────────────────────────────────────────────
-function resolveCollision() {
-  const R = 0.44;
-  let landed = false;
+// ── 알림 ──────────────────────────────────────────────────
+const notifyEl = document.getElementById('notify');
+let notifyTimer=null;
+function showNotify(msg,dur=2){
+  notifyEl.textContent=msg;
+  notifyEl.style.opacity=1;
+  clearTimeout(notifyTimer);
+  notifyTimer=setTimeout(()=>{notifyEl.style.opacity=0;},dur*1000);
+}
 
-  for (const p of platforms) {
-    if (!p.solid) continue;
-
-    if (charPos.x+R < p.minX || charPos.x-R > p.maxX) continue;
-    if (charPos.z+R < p.minZ || charPos.z-R > p.maxZ) continue;
-
-    const footY = charPos.y - CHAR_H;
-    const headY = charPos.y + 0.3;
-
-    // Land on top
-    if (charVelY <= 0.1 && footY <= p.maxY+0.05 && footY >= p.maxY - 0.9) {
-      charPos.y = p.maxY + CHAR_H;
-      charVelY  = p.bouncy ? JUMP_F * 1.4 : 0;
-      if (p.bouncy && !onGround) showNotify('🟡 통통!', 0.5);
-      landed = true;
-    }
-    // Hit ceiling
-    else if (charVelY > 0 && headY >= p.minY && headY <= p.minY+0.7){
-      charPos.y = p.minY - 0.3; charVelY = 0;
-    }
-    // Side push
-    else if (footY < p.maxY-0.1 && headY > p.minY) {
-      const ox = charPos.x - p.cx;
-      const oz = charPos.z - p.cz;
-      const penX = (p.hw + R) - Math.abs(ox);
-      const penZ = (p.hd + R) - Math.abs(oz);
-      if (penX > 0 && penZ > 0) {
-        if (penX < penZ) charPos.x += Math.sign(ox) * penX;
-        else             charPos.z += Math.sign(oz) * penZ;
+// ── 충돌 ──────────────────────────────────────────────────
+function resolveCollision(){
+  const R=0.45;
+  let landed=false;
+  for(const p of platforms){
+    if(!p.solid) continue;
+    if(charPos.x+R<p.minX||charPos.x-R>p.maxX) continue;
+    if(charPos.z+R<p.minZ||charPos.z-R>p.maxZ) continue;
+    const footY=charPos.y-CHAR_H;
+    const headY=charPos.y+0.3;
+    if(charVelY<=0.05&&footY<=p.maxY+0.08&&footY>=p.maxY-0.85){
+      charPos.y=p.maxY+CHAR_H;
+      charVelY = p.bouncy ? JUMP_F*1.6 : 0;
+      if(p.bouncy) showNotify('🟡 통통!',0.5);
+      // Q블록 밟기
+      if(p.isQBlock&&!p.hit){
+        p.hit=true;
+        p.mesh.material.color.set(0x888888);
+        showNotify('⭐ +코인!',1);
+        addFloatingCoin(p.cx,p.cy+1.5,p.cz);
+        collectedCoins++;
+        updateCoinUI();
+      }
+      landed=true;
+    } else if(charVelY>0&&headY>=p.minY&&headY<=p.minY+0.7){
+      charPos.y=p.minY-0.3; charVelY=0;
+    } else if(footY<p.maxY-0.05&&headY>p.minY){
+      const ox=charPos.x-p.cx, oz=charPos.z-p.cz;
+      const penX=(p.hw+R)-Math.abs(ox), penZ=(p.hd+R)-Math.abs(oz);
+      if(penX>0&&penZ>0){
+        if(penX<penZ) charPos.x+=Math.sign(ox)*penX;
+        else          charPos.z+=Math.sign(oz)*penZ;
       }
     }
   }
   return landed;
 }
 
-// ── Game state ────────────────────────────────────────────
-let gameRunning = false;
-let elapsed     = 0;
-let currentCP   = 0;     // last reached checkpoint index
-let deaths      = 0;
-let TOTAL_CP    = 0;
+// ── 플로팅 코인 (Q블록에서 나오는 코인) ─────────────────
+function addFloatingCoin(x,y,z){
+  const m=mkCyl(0.3,0.1,0xffd700);
+  m.rotation.x=Math.PI/2;
+  m.position.set(x,y,z);
+  scene.add(m);
+  let t=0;
+  const anim=()=>{
+    t+=0.05;
+    m.position.y=y+Math.sin(t)*0.5+t*0.5;
+    m.rotation.z+=0.1;
+    if(t<2) requestAnimationFrame(anim);
+    else scene.remove(m);
+  };
+  anim();
+}
 
-const startScreen = document.getElementById('start-screen');
-const pauseScreen = document.getElementById('pause-screen');
-const clearScreen = document.getElementById('clear-screen');
-const timerEl     = document.getElementById('timer');
-const cpText      = document.getElementById('cp-text');
-const progressBar = document.getElementById('progress-bar');
+// ── 코인 수집 ─────────────────────────────────────────────
+const coinCountEl=document.getElementById('coin-count');
+function updateCoinUI(){
+  coinCountEl.textContent=collectedCoins;
+}
 
-function startGame() {
+function checkCoins(){
+  for(const c of coins){
+    if(c.collected) continue;
+    const dx=charPos.x-c.x, dy=charPos.y-c.y, dz=charPos.z-c.z;
+    if(dx*dx+dy*dy+dz*dz<1.5){
+      c.collected=true;
+      scene.remove(c.mesh);
+      collectedCoins++;
+      updateCoinUI();
+      showNotify('🪙',0.4);
+    }
+  }
+}
+
+// ── 게임 상태 ─────────────────────────────────────────────
+let gameRunning=false, elapsed=0, deaths=0, currentCP=0, TOTAL_CP=0;
+
+const startScreen=document.getElementById('start-screen');
+const pauseScreen=document.getElementById('pause-screen');
+const clearScreen=document.getElementById('clear-screen');
+const timerEl=document.getElementById('timer');
+const progBar=document.getElementById('prog-bar');
+
+function startGame(){
   buildWorld();
-  TOTAL_CP = checkpoints.length;
-  currentCP = 0; elapsed = 0; deaths = 0;
+  TOTAL_CP=checkpoints.length;
+  currentCP=0; elapsed=0; deaths=0;
+  collectedCoins=0; updateCoinUI();
   respawn(true);
-  cpText.textContent = `${currentCP} / ${TOTAL_CP-1}`;
-  progressBar.style.width = '0%';
-  gameRunning = true;
-  showNotify('🌿 구간 1 - 튜토리얼', 2.5);
+  progBar.style.width='0%';
+  gameRunning=true;
+  showNotify('🍄 구간 1 - 초록 들판!',2.5);
 }
 
-function respawn(silent) {
-  const cp = checkpoints[currentCP];
-  charPos.copy(cp.pos).add(new THREE.Vector3(0, 1.5, 0));
-  charVelY = 0; onGround = false; jumpsLeft = 2;
-  if (!silent) {
-    deaths++;
-    showNotify('💀 추락! 다시 시도…', 1.5);
-  }
+function respawn(silent){
+  const cp=checkpoints[currentCP];
+  charPos.copy(cp.pos).add(new THREE.Vector3(0,1.5,0));
+  charVelY=0; onGround=false;
+  jumpsLeft=MAX_JUMPS; updateJumpDots();
+  if(!silent){ deaths++; showNotify('💀 다시 시도!',1.5); }
 }
 
-function reachCheckpoint(idx) {
-  if (idx <= currentCP) return;
-  currentCP = idx;
-  cpText.textContent = `${currentCP} / ${TOTAL_CP-1}`;
-  progressBar.style.width = `${(currentCP/(TOTAL_CP-1))*100}%`;
-  const names = ['','🌿 구간 2 - 좁은 발판','🔵 구간 3 - 움직이는 발판',
-    '💜 구간 4 - 사라지는 발판','🟡 구간 5 - 통통 발판',
-    '🔶 구간 6 - 회전 장애물','🌈 구간 7 - 최종 구간'];
-  showNotify('✅ 체크포인트 ' + idx + (names[idx]?' '+names[idx]:''), 2.5);
-  // Update flag color
-  checkpoints[idx].mesh.material.color.set(0x27ae60);
+function reachCP(idx){
+  if(idx<=currentCP) return;
+  currentCP=idx;
+  progBar.style.width=`${(currentCP/(TOTAL_CP-1))*100}%`;
+  const names=['','🪙 구간 2 - 코인 로드','🔴 구간 3 - 움직이는 발판',
+    '👻 구간 4 - 사라지는 발판','🌟 구간 5 - 통통 발판',
+    '🌿 구간 6 - 파이프 왕국','🌈 구간 7 - 최종 구간'];
+  showNotify('✅ 체크포인트! '+(names[idx]||''),2.5);
+  checkpoints[idx].flagMesh.material.color.set(0x27ae60);
 }
 
-// ── Animation ─────────────────────────────────────────────
-let animT = 0;
-function animChar(moving, dt) {
-  animT += dt * (moving ? 8 : 0);
-  const sw = moving ? Math.sin(animT) * 0.6 : 0;
-  // 팔 앞뒤 스윙
-  lArm.rotation.x =  sw;
-  rArm.rotation.x = -sw;
-  // 다리 앞뒤 스윙
-  lLeg.rotation.x = -sw;
-  rLeg.rotation.x =  sw;
-  // 머리 살짝 위아래 (걸을 때)
-  head.position.y = 1.05 + (moving ? Math.abs(Math.sin(animT)) * 0.03 : 0);
-  neck.position.y = 0.80 + (moving ? Math.abs(Math.sin(animT)) * 0.03 : 0);
-  // 점프 시 몸 늘어남
-  if (!onGround) {
-    torso.scale.y = 1.1;
-    lLeg.scale.y  = rLeg.scale.y = 0.92;
+// ── 애니메이션 ────────────────────────────────────────────
+let animT=0;
+function animChar(moving,dt){
+  animT += dt*(moving?8:0);
+  const sw = moving ? Math.sin(animT)*0.6 : 0;
+  lArm.rotation.x= sw; rArm.rotation.x=-sw;
+  lLeg.rotation.x=-sw; rLeg.rotation.x= sw;
+  // 모자 살짝 흔들
+  hatTop.rotation.z = moving ? Math.sin(animT)*0.04 : 0;
+  head.position.y = 1.15+(moving?Math.abs(Math.sin(animT))*0.03:0);
+  if(!onGround){
+    body.scale.y=1.1; lLeg.scale.y=rLeg.scale.y=0.92;
   } else {
-    torso.scale.y = 1.0;
-    lLeg.scale.y  = rLeg.scale.y = 1.0;
+    body.scale.y=1.0; lLeg.scale.y=rLeg.scale.y=1.0;
   }
 }
 
-// ── UI callbacks ──────────────────────────────────────────
+// ── UI 콜백 ───────────────────────────────────────────────
 document.getElementById('play-btn').addEventListener('click',()=>{
   startScreen.style.display='none';
   startGame();
@@ -570,118 +655,106 @@ document.getElementById('replay-btn').addEventListener('click',()=>{
   renderer.domElement.requestPointerLock();
 });
 
-// ── Main loop ─────────────────────────────────────────────
-let lastTime = performance.now();
+// ── 메인 루프 ─────────────────────────────────────────────
+let lastTime=performance.now();
 
-function animate() {
+function animate(){
   requestAnimationFrame(animate);
-  const now = performance.now();
-  const dt  = Math.min((now - lastTime)/1000, 0.05);
-  lastTime  = now;
+  const now=performance.now();
+  const dt=Math.min((now-lastTime)/1000,0.05);
+  lastTime=now;
 
-  if (!gameRunning) { renderer.render(scene, camera); return; }
+  // 코인 회전 (수집 안된 것)
+  coins.forEach(c=>{ if(!c.collected) c.mesh.rotation.y+=dt*2; });
 
-  elapsed += dt;
-  timerEl.textContent = elapsed.toFixed(1) + 's';
+  if(!gameRunning){ renderer.render(scene,camera); return; }
 
-  // ─ Update dynamics ─
-  for (const d of dynamics) {
-    if (d.type === 'rotate') {
-      d.t += dt * d.speed;
-      d.pivot.rotation.y = d.t;
-      // killer check
-      if (d.isKiller) {
-        const arm = d.pivot.children[0];
-        const wp = new THREE.Vector3();
-        arm.getWorldPosition(wp);
-        const dx = charPos.x - d.kx, dz = charPos.z - d.kz;
-        const dist = Math.sqrt(dx*dx + dz*dz);
-        if (dist < d.kRange && Math.abs(charPos.y - d.ky) < 1.8) {
-          respawn(false); return;
-        }
-      }
-    } else if (d.type === 'fade') {
-      d.t = (d.t||0) + dt;
-      const cycle = ((d.t + d.offset) % d.period) / d.period;
-      const vis = cycle < 0.55;
-      d.p.solid = vis;
-      d.p.mesh.material.opacity = vis ? 1 : 0.12;
-      d.p.mesh.material.transparent = !vis || true;
+  elapsed+=dt;
+  timerEl.textContent=elapsed.toFixed(1)+'s';
+
+  // ─ 다이나믹 오브젝트 ─
+  for(const d of dynamics){
+    if(d.type==='move'){
+      d.t+=dt*d.speed;
+      const off=Math.sin(d.t)*d.range;
+      if(d.axis==='x'){ d.p.cx=d.ox+off; d.p.mesh.position.x=d.p.cx; }
+      else             { d.p.cz=d.oz+off; d.p.mesh.position.z=d.p.cz; }
+      updBounds(d.p);
     } else {
-      // moving
-      d.t += dt * d.speed;
-      const off = Math.sin(d.t) * d.range;
-      if (d.axis==='x') {
-        d.p.cx = d.ox + off;
-        d.p.mesh.position.x = d.p.cx;
-      } else {
-        d.p.cz = d.oz + off;
-        d.p.mesh.position.z = d.p.cz;
-      }
-      updatePlatBounds(d.p);
+      d.t+=dt;
+      const vis=((d.t%d.period)/d.period)<0.58;
+      d.p.solid=vis;
+      d.p.mesh.material.opacity=vis?1:0.18;
+      d.p.mesh.material.transparent=true;
     }
   }
 
-  // ─ Player movement ─
-  const fwd = new THREE.Vector3(-Math.sin(camYaw), 0, -Math.cos(camYaw));
-  const rgt = new THREE.Vector3(-Math.sin(camYaw-Math.PI/2), 0, -Math.cos(camYaw-Math.PI/2));
-  let mx=0, mz=0;
-  if (keys['KeyW']||keys['ArrowUp'])    { mx+=fwd.x; mz+=fwd.z; }
-  if (keys['KeyS']||keys['ArrowDown'])  { mx-=fwd.x; mz-=fwd.z; }
-  if (keys['KeyA']||keys['ArrowLeft'])  { mx-=rgt.x; mz-=rgt.z; }
-  if (keys['KeyD']||keys['ArrowRight']) { mx+=rgt.x; mz+=rgt.z; }
-  const len = Math.sqrt(mx*mx+mz*mz);
-  const moving = len > 0.01;
-  if (moving) { mx/=len; mz/=len; charPos.x+=mx*SPEED*dt; charPos.z+=mz*SPEED*dt; charYaw=Math.atan2(mx,mz); }
+  // ─ 이동 ─
+  const fwd=new THREE.Vector3(-Math.sin(camYaw),0,-Math.cos(camYaw));
+  const rgt=new THREE.Vector3(-Math.sin(camYaw-Math.PI/2),0,-Math.cos(camYaw-Math.PI/2));
+  let mx=0,mz=0;
+  if(keys['KeyW']||keys['ArrowUp'])    {mx+=fwd.x;mz+=fwd.z;}
+  if(keys['KeyS']||keys['ArrowDown'])  {mx-=fwd.x;mz-=fwd.z;}
+  if(keys['KeyA']||keys['ArrowLeft'])  {mx-=rgt.x;mz-=rgt.z;}
+  if(keys['KeyD']||keys['ArrowRight']) {mx+=rgt.x;mz+=rgt.z;}
+  const len=Math.sqrt(mx*mx+mz*mz);
+  const moving=len>0.01;
+  if(moving){mx/=len;mz/=len;charPos.x+=mx*SPEED*dt;charPos.z+=mz*SPEED*dt;charYaw=Math.atan2(mx,mz);}
 
-  // ─ Gravity ─
-  charVelY += GRAVITY * dt;
-  charPos.y += charVelY * dt;
+  // ─ 중력 ─
+  charVelY+=GRAVITY*dt;
+  charPos.y+=charVelY*dt;
 
-  // ─ Collision ─
-  onGround = false;
-  if (resolveCollision()) { onGround=true; jumpsLeft=2; }
-
-  // ─ Fall death ─
-  if (charPos.y < -20) respawn(false);
-
-  // ─ Checkpoint detection ─
-  for (const cp of checkpoints) {
-    const d=charPos.distanceTo(cp.pos);
-    if (d<3.5) reachCheckpoint(cp.index);
+  // ─ 충돌 ─
+  onGround=false;
+  if(resolveCollision()){
+    onGround=true;
+    jumpsLeft=MAX_JUMPS;
+    updateJumpDots();
   }
 
-  // ─ Goal detection ─
-  if (charPos.distanceTo(goalPos) < 5) {
-    gameRunning = false;
-    document.getElementById('clear-stats').innerHTML =
-      `⏱ 클리어 시간: <b>${elapsed.toFixed(1)}초</b><br>` +
-      `💀 사망 횟수: <b>${deaths}번</b><br>` +
-      `🏁 체크포인트: <b>${TOTAL_CP-1} / ${TOTAL_CP-1}</b>`;
-    clearScreen.style.display = 'flex';
-    if (pointerLocked) document.exitPointerLock();
+  // ─ 추락 ─
+  if(charPos.y<-15) respawn(false);
+
+  // ─ 코인 수집 ─
+  checkCoins();
+
+  // ─ 체크포인트 ─
+  for(const cp of checkpoints){
+    if(charPos.distanceTo(cp.pos)<3.5) reachCP(cp.index);
   }
 
-  // ─ Apply char transform ─
+  // ─ 골 ─
+  if(charPos.distanceTo(goalPos)<6){
+    gameRunning=false;
+    document.getElementById('clear-stats').innerHTML=
+      `⏱ 클리어 시간: <b>${elapsed.toFixed(1)}초</b><br>`+
+      `🪙 코인: <b>${collectedCoins} / ${totalCoins}</b><br>`+
+      `💀 사망: <b>${deaths}번</b>`;
+    clearScreen.style.display='flex';
+    if(pointerLocked) document.exitPointerLock();
+  }
+
+  // ─ 캐릭터 적용 ─
   charGroup.position.copy(charPos);
-  charGroup.rotation.y = charYaw;
-  animChar(moving, dt);
+  charGroup.rotation.y=charYaw;
+  animChar(moving,dt);
 
-  // ─ 3rd person camera ─
-  const camOX = Math.sin(camYaw)*Math.cos(camPitch)*camDist;
-  const camOY = Math.sin(camPitch)*camDist + 2.5;
-  const camOZ = Math.cos(camYaw)*Math.cos(camPitch)*camDist;
-  const target = charPos.clone().add(new THREE.Vector3(0,1.5,0));
+  // ─ 3인칭 카메라 ─
+  const camOX=Math.sin(camYaw)*Math.cos(camPitch)*camDist;
+  const camOY=Math.sin(camPitch)*camDist+2.5;
+  const camOZ=Math.cos(camYaw)*Math.cos(camPitch)*camDist;
+  const target=charPos.clone().add(new THREE.Vector3(0,1.5,0));
   camera.position.copy(target).add(new THREE.Vector3(camOX,camOY,camOZ));
   camera.lookAt(target);
 
-  renderer.render(scene, camera);
+  renderer.render(scene,camera);
 }
 
-window.addEventListener('resize', ()=>{
-  camera.aspect = window.innerWidth/window.innerHeight;
+window.addEventListener('resize',()=>{
+  camera.aspect=window.innerWidth/window.innerHeight;
   camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setSize(window.innerWidth,window.innerHeight);
 });
 
 animate();
